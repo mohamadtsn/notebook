@@ -1,12 +1,12 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect } from 'react';
 
 interface Options {
   onNewNote: () => void;
+  onOpenPalette: () => void;
   onDeselect: () => void;
-  searchRef: RefObject<HTMLInputElement | null>;
 }
 
-export function useKeyboardShortcuts({ onNewNote, onDeselect, searchRef }: Options) {
+export function useKeyboardShortcuts({ onNewNote, onOpenPalette, onDeselect }: Options) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
@@ -18,7 +18,7 @@ export function useKeyboardShortcuts({ onNewNote, onDeselect, searchRef }: Optio
 
       if (ctrl && e.key === 'k') {
         e.preventDefault();
-        searchRef.current?.focus();
+        onOpenPalette();
       }
 
       if (e.key === 'Escape') {
@@ -33,5 +33,5 @@ export function useKeyboardShortcuts({ onNewNote, onDeselect, searchRef }: Optio
 
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onNewNote, onDeselect, searchRef]);
+  }, [onNewNote, onOpenPalette, onDeselect]);
 }

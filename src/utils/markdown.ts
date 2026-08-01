@@ -6,13 +6,41 @@ function escapeHtml(str: string): string {
   return str.replace(/[&<>"']/g, c => ESCAPE_MAP[c]);
 }
 
+/**
+ * Longest line that still gets inline formatting. The lazy quantifiers below backtrack
+ * badly on pathological input (a line of thousands of `*`), and the preview re-renders
+ * while the user types — so the failure mode is a frozen tab. No real note needs more.
+ */
+const MAX_INLINE = 10_000;
+
+/** Anything that isn't a plain navigable URL becomes inert — blocks javascript:/data: hrefs. */
+function safeUrl(url: string): string {
+  const trimmed = url.trim();
+  // `//host` reads as a local path but is protocol-relative: it leaves the origin.
+  if (trimmed.startsWith('//')) return '#';
+  return /^(https?:\/\/|mailto:|\/|#|\.)/i.test(trimmed) ? trimmed : '#';
+}
+
+/**
+ * Escapes FIRST, then applies inline rules, so no user-authored markup ever
+ * reaches the DOM. The output is fed to dangerouslySetInnerHTML — every new
+ * construct added here must keep the escape-before-replace order.
+ */
 function renderInline(text: string): string {
-  return text
+  const escaped = escapeHtml(text);
+  // Past the ceiling the text is still shown — escaped and unformatted, never dropped.
+  if (escaped.length > MAX_INLINE) return escaped;
+
+  return escaped
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/~~(.+?)~~/g, '<del>$1</del>')
     .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    .replace(
+      /\[(.+?)\]\((.+?)\)/g,
+      (_, label: string, url: string) =>
+        `<a href="${safeUrl(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`,
+    );
 }
 
 export function renderMarkdown(text: string): string {
