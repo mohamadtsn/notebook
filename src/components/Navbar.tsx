@@ -1,46 +1,51 @@
-import { Plus, Menu, Sun, Moon } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Menu, Moon, NotebookPen, Plus, Sun } from 'lucide-react';
+import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
 
 interface NavbarProps {
   onNewNote: () => void;
   onToggleSidebar: () => void;
   dark: boolean;
   onToggleDark: () => void;
+  /** Slot for the sync status, kept out of the navbar's own concerns. */
+  children?: ReactNode;
 }
 
-export function Navbar({ onNewNote, onToggleSidebar, dark, onToggleDark }: NavbarProps) {
+export function Navbar({ onNewNote, onToggleSidebar, dark, onToggleDark, children }: NavbarProps) {
   return (
-    <header className="h-14 border-b border-border bg-paper flex items-center justify-between px-4 shrink-0 z-30 relative">
-      <div className="flex items-center gap-3">
-        <button
-          onClick={onToggleSidebar}
-          className="md:hidden p-1.5 rounded-md text-muted hover:bg-border transition-colors"
-          aria-label="Toggle sidebar"
-        >
+    // Floating, not docked: it hovers over the cards below so their text passes
+    // under it. `pointer-events-none` on the bar itself would kill the buttons,
+    // so it only spans the chrome height — nothing more is covered.
+    <header
+      className="glass-chrome absolute inset-x-(--shell-gap) top-0 z-30 flex h-(--chrome-h) items-center justify-between rounded-2xl px-2 sm:px-3"
+      style={{ marginTop: 'calc(env(safe-area-inset-top) + var(--shell-gap))' }}
+    >
+      <div className="flex items-center gap-2">
+        <IconButton label="نمایش فهرست یادداشت‌ها" onClick={onToggleSidebar} className="md:hidden">
           <Menu size={18} />
-        </button>
-        <h1
-          className="text-lg font-semibold text-ink tracking-tight"
-          style={{ fontFamily: "'Inter', sans-serif" }}
+        </IconButton>
+        {/* Mark, not a control: decorative, so it stays out of the a11y tree */}
+        <span
+          aria-hidden
+          className="ms-1 flex size-8 items-center justify-center rounded-lg bg-accent text-on-accent shadow-e1"
         >
-          Notebook
-        </h1>
+          <NotebookPen size={17} />
+        </span>
+        <h1 className="text-lg font-semibold tracking-[-0.01em] text-ink">دفترچه</h1>
       </div>
 
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onToggleDark}
-          title={dark ? 'حالت روشن' : 'حالت تاریک'}
-          className="p-1.5 rounded-md text-muted hover:bg-border transition-colors"
-        >
+      <div className="flex items-center gap-1">
+        {children}
+
+        <IconButton label={dark ? 'حالت روشن' : 'حالت تاریک'} onClick={onToggleDark}>
           {dark ? <Sun size={17} /> : <Moon size={17} />}
-        </button>
-        <button
-          onClick={onNewNote}
-          className="flex items-center cursor-pointer gap-1.5 bg-accent text-white text-sm font-medium px-3 py-1.5 rounded-md hover:opacity-90 transition-opacity"
-        >
+        </IconButton>
+
+        <Button variant="primary" size="sm" onClick={onNewNote}>
           <Plus size={16} />
-          <span>یادداشت جدید</span>
-        </button>
+          <span className="hidden sm:inline">یادداشت جدید</span>
+        </Button>
       </div>
     </header>
   );

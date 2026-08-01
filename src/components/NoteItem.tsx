@@ -1,6 +1,7 @@
 import { Pin } from 'lucide-react';
 import type { Note } from '../types/note';
-import { NOTE_COLOR_HEX } from '../types/note';
+import { noteColorVar } from '../types/note';
+import { cx } from './ui/cx';
 
 interface NoteItemProps {
   note: Note;
@@ -22,33 +23,37 @@ function formatTime(ms: number): string {
 
 export function NoteItem({ note, isActive, onClick }: NoteItemProps) {
   const title = note.title.trim() || 'یادداشت بدون عنوان';
-  const preview = note.body.trim().slice(0, 80);
-  const colorHex = note.color ? NOTE_COLOR_HEX[note.color] : null;
+  const preview = note.body.trim();
+
+  // Label is a 3px inline-start bar, never a background fill — DESIGN.md §1
+  const labelColor = note.color ? noteColorVar(note.color) : null;
+  const barColor = isActive ? 'var(--accent)' : labelColor;
 
   return (
     <button
       onClick={onClick}
-      className={`w-full text-right px-4 py-3 border-b border-border transition-colors hover:bg-border/30 ${
-        isActive ? 'bg-accent/10' : ''
-      }`}
-      style={isActive && colorHex ? { borderLeftColor: colorHex, borderLeftWidth: 3 } :
-             isActive ? { borderLeftColor: 'var(--accent)', borderLeftWidth: 3 } :
-             colorHex ? { borderLeftColor: colorHex, borderLeftWidth: 3 } : undefined}
-    >
-      <div className="flex items-center gap-1.5 justify-end">
-        {note.pinned && <Pin size={11} className="text-muted shrink-0" />}
-        {colorHex && (
-          <span
-            className="w-2 h-2 rounded-full shrink-0"
-            style={{ backgroundColor: colorHex }}
-          />
-        )}
-        <p className="text-sm font-medium text-ink truncate">{title}</p>
-      </div>
-      {preview && (
-        <p className="text-xs text-muted mt-0.5 truncate">{preview}</p>
+      aria-current={isActive ? 'true' : undefined}
+      className={cx(
+        'w-full border-b border-separator px-4 py-3 text-start',
+        'transition-colors duration-(--d-fast)',
+        isActive ? 'bg-accent-soft' : 'hover:bg-accent-soft/60',
       )}
-      <p className="text-xs text-muted mt-1">{formatTime(note.updatedAt)}</p>
+      style={barColor ? { borderInlineStartColor: barColor, borderInlineStartWidth: 3 } : undefined}
+    >
+      <div className="flex items-center gap-1.5">
+        {note.pinned && <Pin size={11} className="shrink-0 text-muted" />}
+        {labelColor && (
+          <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: labelColor }} />
+        )}
+        <p className={cx('truncate text-[.9375rem] font-medium', isActive ? 'text-ink' : 'text-ink-soft')}>
+          {title}
+        </p>
+      </div>
+
+      {preview && (
+        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted">{preview}</p>
+      )}
+      <p className="mt-1.5 text-xs text-muted">{formatTime(note.updatedAt)}</p>
     </button>
   );
 }

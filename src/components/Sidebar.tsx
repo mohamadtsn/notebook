@@ -1,10 +1,28 @@
-import { useState, forwardRef } from 'react';
-import { Search, ArrowDownAZ, Clock, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowDownAZ, Clock, History, Search, Trash2 } from 'lucide-react';
 import type { Note } from '../types/note';
 import { NoteItem } from './NoteItem';
+import { IconButton } from './ui/IconButton';
+import { cx } from './ui/cx';
+import { getItem, setItem } from '../utils/storage';
 
-type SortOrder = 'newest' | 'alpha';
+type SortOrder = 'newest' | 'oldest' | 'alpha';
 type View = 'notes' | 'trash';
+
+const SORT_KEY = 'notebook_sort';
+
+/** Cycled by one button rather than a menu — three options don't earn a popover. */
+const SORTS = [
+  { value: 'newest', label: 'مرتب‌سازی: جدیدترین', icon: Clock },
+  { value: 'oldest', label: 'مرتب‌سازی: قدیمی‌ترین', icon: History },
+  { value: 'alpha',  label: 'مرتب‌سازی: الفبا', icon: ArrowDownAZ },
+] as const;
+
+function compare(a: Note, b: Note, sort: SortOrder): number {
+  if (sort === 'newest') return b.updatedAt - a.updatedAt;
+  if (sort === 'oldest') return a.updatedAt - b.updatedAt;
+  return a.title.localeCompare(b.title, 'fa');
+}
 
 interface SidebarProps {
   notes: Note[];
@@ -13,96 +31,96 @@ interface SidebarProps {
   view: View;
   onViewChange: (v: View) => void;
   onSelect: (id: string) => void;
+  onOpenSearch: () => void;
 }
 
-export const Sidebar = forwardRef<HTMLInputElement, SidebarProps>(
-  ({ notes, trashedNotes, activeNoteId, view, onViewChange, onSelect }, searchRef) => {
-    const [query, setQuery] = useState('');
-    const [sort, setSort] = useState<SortOrder>('newest');
+export function Sidebar({
+  notes, trashedNotes, activeNoteId, view, onViewChange, onSelect, onOpenSearch,
+}: SidebarProps) {
+  const [sort, setSort] = useState<SortOrder>(() => getItem<SortOrder>(SORT_KEY, 'newest'));
 
-    const source = view === 'notes' ? notes : trashedNotes;
+  const cycleSort = () => {
+    const next = SORTS[(SORTS.findIndex(s => s.value === sort) + 1) % SORTS.length].value;
+    setItem(SORT_KEY, next);
+    setSort(next);
+  };
 
-    const filtered = query
-      ? source.filter(n =>
-          n.title.toLowerCase().includes(query.toLowerCase()) ||
-          n.body.toLowerCase().includes(query.toLowerCase())
-        )
-      : source;
+  const current = SORTS.find(s => s.value === sort) ?? SORTS[0];
+  const SortIcon = current.icon;
 
-    const sorted = [...filtered].sort((a, b) => {
-      // Pinned first (only in notes view)
-      if (view === 'notes') {
-        if (a.pinned && !b.pinned) return -1;
-        if (!a.pinned && b.pinned) return 1;
-      }
-      if (sort === 'newest') return b.updatedAt - a.updatedAt;
-      return a.title.localeCompare(b.title, 'fa');
-    });
+  const source = view === 'notes' ? notes : trashedNotes;
 
-    return (
-      <aside className="w-70 border-r border-border bg-paper flex flex-col h-full">
-        {/* Search + sort */}
-        <div className="px-3 py-2 border-b border-border flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted" />
-            <input
-              ref={searchRef}
-              type="text"
-              placeholder="جستجو... (Ctrl+K)"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              dir="rtl"
-              className="w-full pr-8 pl-3 py-1.5 text-sm bg-paper border border-border rounded-md placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent text-right text-ink"
-            />
-          </div>
+  const sorted = [...source].sort((a, b) => {
+    // Pinned first, but only where pinning means anything
+    if (view === 'notes') {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+    }
+    return compare(a, b, sort);
+  });
+
+  return (
+    // A solid floating card, deliberately *not* glass: the navbar is the glass
+    // layer and it hovers over this one. Two translucent planes stacked would
+    // cancel each other out — DESIGN.md §2.
+    <aside className="flex h-full w-72 flex-col overflow-hidden rounded-2xl border border-separator bg-surface shadow-e2">
+      {/* One scroll container: the search row scrolls with the list rather than
+          pinning, so there's no seam between a fixed strip and moving rows. */}
+      <div className="min-h-0 flex-1 overflow-y-auto pt-3">
+        <div className="flex items-center gap-1 px-3 pb-2">
+          {/* Search is the command palette now — this button just opens it */}
           <button
-            onClick={() => setSort(s => (s === 'newest' ? 'alpha' : 'newest'))}
-            title={sort === 'newest' ? 'مرتب: جدیدترین' : 'مرتب: الفبا'}
-            className="p-1.5 rounded-md text-muted hover:bg-border transition-colors shrink-0"
+            onClick={onOpenSearch}
+            className="flex flex-1 items-center gap-2 rounded-lg bg-fill px-3 py-2 text-start text-sm text-muted transition-colors duration-(--d-fast) hover:text-ink"
           >
-            {sort === 'newest' ? <Clock size={15} /> : <ArrowDownAZ size={15} />}
+            <Search size={14} className="shrink-0" />
+            <span className="flex-1">جستجو…</span>
+            <kbd className="shrink-0 font-mono text-[.6875rem] text-muted">Ctrl K</kbd>
           </button>
+
+          <IconButton label={current.label} onClick={cycleSort}>
+            <SortIcon size={16} />
+          </IconButton>
         </div>
 
-        {/* Note list */}
-        <div className="flex-1 overflow-y-auto">
-          {sorted.length === 0 && (
-            <p className="text-center text-sm text-muted mt-8 px-4">
-              {query ? 'یادداشتی یافت نشد' : view === 'trash' ? 'سطل زباله خالی است' : 'هنوز یادداشتی ندارید'}
-            </p>
-          )}
-          {sorted.map(note => (
-            <NoteItem
-              key={note.id}
-              note={note}
-              isActive={note.id === activeNoteId}
-              onClick={() => onSelect(note.id)}
-            />
-          ))}
-        </div>
+        {sorted.length === 0 && (
+          <p className="mt-8 px-4 text-center text-sm text-muted">
+            {view === 'trash' ? 'سطل زباله خالی است' : 'هنوز یادداشتی ندارید'}
+          </p>
+        )}
+        {sorted.map(note => (
+          <NoteItem
+            key={note.id}
+            note={note}
+            isActive={note.id === activeNoteId}
+            onClick={() => onSelect(note.id)}
+          />
+        ))}
+      </div>
 
-        {/* Bottom nav */}
-        <div className="border-t border-border flex">
+      <div
+        className="flex shrink-0 border-t border-separator"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        {([
+          { value: 'notes', label: 'یادداشت‌ها', icon: null },
+          { value: 'trash', label: 'سطل زباله', icon: <Trash2 size={13} /> },
+        ] as const).map(tab => (
           <button
-            onClick={() => onViewChange('notes')}
-            className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
-              view === 'notes' ? 'text-accent' : 'text-muted hover:text-ink'
-            }`}
+            key={tab.value}
+            onClick={() => onViewChange(tab.value)}
+            aria-current={view === tab.value ? 'page' : undefined}
+            className={cx(
+              'flex flex-1 items-center justify-center gap-1.5 py-3.5 text-xs font-medium',
+              'transition-colors duration-[var(--d-fast)]',
+              view === tab.value ? 'text-accent' : 'text-muted hover:text-ink',
+            )}
           >
-            یادداشت‌ها
+            {tab.icon}
+            {tab.label}
           </button>
-          <button
-            onClick={() => onViewChange('trash')}
-            className={`flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1 transition-colors ${
-              view === 'trash' ? 'text-accent' : 'text-muted hover:text-ink'
-            }`}
-          >
-            <Trash2 size={12} />
-            سطل زباله
-          </button>
-        </div>
-      </aside>
-    );
-  }
-);
-Sidebar.displayName = 'Sidebar';
+        ))}
+      </div>
+    </aside>
+  );
+}

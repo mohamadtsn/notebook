@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#0E7490"/>
+  <!-- Mirrored: Persian-first app, so the spine binds on the inline-start (right) edge. -->
+  <g transform="translate(512 4) scale(-1 1)">
+    <rect x="148" y="116" width="216" height="280" rx="26" fill="#FFFFFF"/>
+    <rect x="148" y="116" width="46" height="280" rx="26" fill="#0A5A70"/>
+    <rect x="164" y="150" width="14" height="14" rx="7" fill="#FFFFFF" opacity=".9"/>
+    <rect x="164" y="249" width="14" height="14" rx="7" fill="#FFFFFF" opacity=".9"/>
+    <rect x="164" y="348" width="14" height="14" rx="7" fill="#FFFFFF" opacity=".9"/>
+    <g fill="#0E7490" opacity=".28">
+      <rect x="222" y="176" width="112" height="16" rx="8"/>
+      <rect x="222" y="228" width="112" height="16" rx="8"/>
+      <rect x="222" y="280" width="70" height="16" rx="8"/>
+    </g>
+  </g>
+</svg>
