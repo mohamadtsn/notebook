@@ -1,0 +1,17 @@
+services:
+  server:
+    build: ./server
+    restart: unless-stopped
+    # Runs as the host user so the bind-mounted directory stays writable and the
+    # files it creates are owned by you, not root.
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      # Required — the server refuses to boot without it. See .env.example.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+    volumes:
+      # Plain host directory, deliberately not a docker volume: the SQLite file is
+      # a real file you can see, back up, and copy. No docker command can drop it.
+      - ./data:/data
