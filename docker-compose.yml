@@ -2,8 +2,10 @@ services:
   server:
     build: ./server
     restart: unless-stopped
-    # Runs as the host user so the bind-mounted directory stays writable and the
-    # files it creates are owned by you, not root.
+    # Runs as the host user so the bind-mounted ./data stays writable and the files
+    # it creates are owned by you, not root. UID/GID come from .env — the shell
+    # never exports them, so without .env this silently falls back to 1000:1000 and
+    # SQLite dies with "unable to open database file" on any other account.
     user: "${UID:-1000}:${GID:-1000}"
     ports:
       # Loopback only: the host's nginx proxies /api/ to it. Binding 0.0.0.0 would
@@ -22,6 +24,13 @@ services:
     build:
       context: .
       dockerfile: ./docker/Dockerfile.frontend-build
+    # Same reason as the server: without this the output is owned by root and the
+    # host's nginx may not be able to read it.
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      # Baked into the bundle at build time. Set it to /api in production so the
+      # browser calls the same origin through nginx.
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3236}
     volumes:
       # Map the build output to the host, so Nginx can serve it
       - ./dist:/app/dist

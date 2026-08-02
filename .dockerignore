@@ -1,0 +1,9 @@
+# Without this, `COPY . .` overwrites the image's freshly installed node_modules
+# with the host's, and bakes .env (JWT_SECRET included) into a layer.
+node_modules
+server/node_modules
+dist
+data
+.git
+.env
+*.local

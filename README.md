@@ -65,6 +65,14 @@ BACKEND_PORT=3236
 VITE_API_URL=http://localhost:3236
 ```
 
+The container writes SQLite files into `./data`, so it has to run as the account that owns that
+directory. Append your ids and create it before the first start:
+
+```bash
+printf 'UID=%s\nGID=%s\n' "$(id -u)" "$(id -g)" >> .env
+mkdir -p data && chown "$(id -u):$(id -g)" data
+```
+
 Then:
 
 ```bash
@@ -120,13 +128,25 @@ forwarding. **It is read at build time**, so changing it means rebuilding the fr
 
 ### 2. Build the frontend
 
+Create `./dist` yourself first. Both bind-mounted directories follow the same rule: if Docker has to
+create one, it lands owned by `root` and the container — which runs as your uid — cannot write to it.
+
 ```bash
+mkdir -p dist
 docker compose run --rm frontend-build      # writes ./dist
 ```
 
+The build runs as the container's command, not during the image build, so it re-runs every time.
+After changing anything in `package.json` rebuild the image too: `docker compose build frontend-build`.
+
 ### 3. Start the backend
 
+`./data` is gitignored, so a fresh clone does not have it. If you let Docker create it, it lands
+owned by `root` and SQLite cannot write — create it yourself and record the ids compose should use:
+
 ```bash
+printf 'UID=%s\nGID=%s\n' "$(id -u)" "$(id -g)" >> .env
+mkdir -p data && chown "$(id -u):$(id -g)" data
 docker compose up -d server
 ```
 
@@ -161,6 +181,40 @@ No Nginx reload needed — static files are picked up as they land. Open browser
 > version exists, so don't fold those rules into a generic `.js` block.
 
 ---
+
+## Troubleshooting
+
+**`Error: unable to open database file` / `ERR_SQLITE_ERROR` errcode 14** — the `server` container's
+uid does not own `./data`. Compose reads `UID`/`GID` from `.env` only; the shell does not export
+`UID` and has no `GID` at all, so without them it falls back to `1000:1000`. Fix:
+
+```bash
+printf 'UID=%s\nGID=%s\n' "$(id -u)" "$(id -g)" >> .env
+sudo chown -R "$(id -u):$(id -g)" data
+docker compose up -d --force-recreate server
+```
+
+Verify with `docker compose config | grep user:` — it must show your real ids.
+
+**403 Forbidden from nginx, and `./dist` is empty** — the build container could not write to the
+mount. Check `stat -c '%U:%G' dist`; if it says `root:root`, Docker created it. Fix:
+
+```bash
+docker run --rm -v "$PWD/dist:/d" alpine chown -R "$(id -u):$(id -g)" /d
+docker compose run --rm frontend-build
+```
+
+**403 Forbidden but `./dist` has files** — nginx cannot traverse the path. `namei -l
+/srv/notebook/dist/index.html` shows the first directory missing `x` for others; a repo under
+`/home/USER` is the usual culprit. On RHEL-family systems check SELinux instead:
+`sudo chcon -R -t httpd_sys_content_t /srv/notebook/dist`.
+
+**The app never picks up a new version** — check that `sw.js` is served `no-cache`:
+`curl -I https://yourdomain.com/sw.js`. A cached service worker cannot discover an update.
+
+**API calls 404 in production** — Fastify serves `/auth/*` and `/sync/*` at the root. The trailing
+slash in `proxy_pass http://127.0.0.1:3236/;` is what strips the `/api` prefix; without it the
+backend receives `/api/sync/pull` and rejects it.
 
 ## Layout
 

@@ -1,10 +1,18 @@
-# Dockerfile for building the frontend
+# Builds the frontend into the bind-mounted ./dist.
+#
+# The build MUST be the container's command, not a RUN layer: ./dist is mounted
+# over /app/dist at run time, so whatever a RUN step wrote there during the image
+# build is shadowed and never reaches the host.
 FROM node:24-alpine
 WORKDIR /app
-COPY package*.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY . .
-# Build the application and output to /app/dist
-RUN npm run build
-# Container will exit after build
-CMD ["true"]
+# Compose runs this as the host's uid so ./dist stays host-owned, but that uid does
+# not exist in the image and /app is root-owned — `tsc -b` needs to write its
+# tsbuildinfo. Throwaway build container, so widening the whole tree is fine.
+RUN chmod -R a+rwX /app
+# VITE_API_URL comes from compose as an environment variable — Vite picks up any
+# VITE_-prefixed var from the process env, so .env (and JWT_SECRET) stays out of
+# the image.
+CMD ["npm", "run", "build"]
