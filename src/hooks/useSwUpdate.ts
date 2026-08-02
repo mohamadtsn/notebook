@@ -11,7 +11,15 @@ export function useSwUpdate() {
   const {
     needRefresh: [needRefresh],
     updateServiceWorker,
-  } = useRegisterSW();
+  } = useRegisterSW({
+    // Installed PWAs stay open for days without a navigation, and a navigation is
+    // the only thing that triggers an update check on its own. Poll hourly so a
+    // deploy is noticed the same day.
+    onRegisteredSW(_url, registration) {
+      if (!registration) return;
+      setInterval(() => registration.update(), 60 * 60 * 1000);
+    },
+  });
 
   useEffect(() => {
     if (!needRefresh) return;

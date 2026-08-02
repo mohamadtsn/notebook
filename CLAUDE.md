@@ -11,7 +11,7 @@ npm run lint     # eslint .
 npm run preview  # serve dist/
 ```
 
-No test runner is installed for the frontend. `README.md` is the stock Vite template — ignore it.
+No test runner is installed for the frontend. `README.md` covers local and production setup — keep it in sync when deployment changes.
 
 ```bash
 cd server && npm test        # node:test, the sync/auth checks
