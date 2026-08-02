@@ -1,0 +1,10 @@
+# Dockerfile for building the frontend
+FROM node:24-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+# Build the application and output to /app/dist
+RUN npm run build
+# Container will exit after build
+CMD ["true"]
