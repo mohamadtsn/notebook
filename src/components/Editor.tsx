@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Undo2 } from 'lucide-react';
 import { easeOut } from '../lib/motion';
@@ -79,11 +79,18 @@ export function Editor({
 
   // The document is one scroll container, so the textarea has to be as tall as
   // its text — otherwise it scrolls inside the page instead of with it.
-  useEffect(() => {
+  // Collapsing to `auto` shrinks the page, so the browser clamps the scroll
+  // container's scrollTop before the new height is applied — that clamp is what
+  // jumped the view upward while typing near the bottom. Restore it in the same
+  // layout pass, before paint.
+  useLayoutEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
+    const scroller = el.parentElement;
+    const top = scroller?.scrollTop ?? 0;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
+    if (scroller) scroller.scrollTop = top;
   }, [body, mode]);
 
   // Persistence is synchronous inside the state updater (see useNotes), so
