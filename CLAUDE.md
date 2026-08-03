@@ -16,7 +16,9 @@ No test runner is installed for the frontend. `README.md` covers local and produ
 ```bash
 cd server && npm test        # node:test, the sync/auth checks
 cd server && npm run typecheck
-cp .env.example .env && docker compose up -d    # repo root; needs a real JWT_SECRET
+cp .env.example .env && docker compose up -d --build    # repo root; needs a real JWT_SECRET
+# --build is mandatory: frontend-build COPYs the source into its image, so without
+# it Compose rebuilds the previous commit into ./dist and the deploy silently no-ops.
 ```
 
 ## Reference docs (read before UI or feature work)

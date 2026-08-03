@@ -91,8 +91,10 @@ cd server && npm install && JWT_SECRET=... node src/index.ts
 
 ### Everything in Docker
 
-`docker compose up -d` starts `server` and runs `frontend-build` (which builds into `./dist` and
-exits). It does **not** start a web server — see below.
+`docker compose up -d --build` starts `server` and runs `frontend-build` (which builds into `./dist`
+and exits). It does **not** start a web server — see below. Keep the `--build`: `frontend-build`
+carries the source inside its image, so a plain `up -d` rebuilds whatever commit the image was made
+from.
 
 ```bash
 docker compose up -d --build frontend-serve    # opt-in Nginx on FRONTEND_PORT
@@ -133,11 +135,13 @@ create one, it lands owned by `root` and the container — which runs as your ui
 
 ```bash
 mkdir -p dist
-docker compose run --rm frontend-build      # writes ./dist
+docker compose run --rm --build frontend-build      # writes ./dist
 ```
 
-The build runs as the container's command, not during the image build, so it re-runs every time.
-After changing anything in `package.json` rebuild the image too: `docker compose build frontend-build`.
+**`--build` is not optional.** The source is `COPY`-ed into the image, so without it Compose reuses
+the existing image and rebuilds the *old* source into `./dist` — the command succeeds, `./dist` is
+rewritten, and none of your changes are in it. The npm layer is cached, so `--build` only costs a
+`COPY` unless `package-lock.json` changed.
 
 ### 3. Start the backend
 
@@ -169,8 +173,8 @@ Add TLS with `sudo certbot --nginx -d yourdomain.com`; certbot rewrites the conf
 
 ```bash
 git pull
-docker compose run --rm frontend-build
-docker compose up -d --build server     # only if the backend changed
+docker compose run --rm --build frontend-build   # --build or you ship the previous commit
+docker compose up -d --build server              # only if the backend changed
 ```
 
 No Nginx reload needed — static files are picked up as they land. Open browsers show a
@@ -201,7 +205,7 @@ mount. Check `stat -c '%U:%G' dist`; if it says `root:root`, Docker created it. 
 
 ```bash
 docker run --rm -v "$PWD/dist:/d" alpine chown -R "$(id -u):$(id -g)" /d
-docker compose run --rm frontend-build
+docker compose run --rm --build frontend-build
 ```
 
 **403 Forbidden but `./dist` has files** — nginx cannot traverse the path. `namei -l
@@ -209,8 +213,18 @@ docker compose run --rm frontend-build
 `/home/USER` is the usual culprit. On RHEL-family systems check SELinux instead:
 `sudo chcon -R -t httpd_sys_content_t /srv/notebook/dist`.
 
-**The app never picks up a new version** — check that `sw.js` is served `no-cache`:
-`curl -I https://yourdomain.com/sw.js`. A cached service worker cannot discover an update.
+**The app never picks up a new version** — check `./dist` before you suspect caching. If
+`frontend-build` ran without `--build`, Compose reused the old image and rebuilt the previous
+commit's source; the asset hashes in `dist/index.html` never change and there is nothing for the
+service worker to update to:
+
+```bash
+grep -o 'assets/[^"]*\.js' dist/index.html   # must change between deploys
+```
+
+If the hashes did change, then check the caching layers: `curl -I https://yourdomain.com/sw.js` must
+show `no-cache`, and a CDN in front must not cache `sw.js` or `index.html` — an `Age:` or a cache
+`HIT` on `sw.js` pins the app to the old version permanently.
 
 **API calls 404 in production** — Fastify serves `/auth/*` and `/sync/*` at the root. The trailing
 slash in `proxy_pass http://127.0.0.1:3236/;` is what strips the `/api` prefix; without it the

@@ -7,6 +7,10 @@ FROM node:24-alpine
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
+# The source lives in the image, so the image is a build artifact of the commit.
+# Deploys must therefore run `docker compose run --rm --build frontend-build` —
+# without --build, Compose reuses the old image and quietly rebuilds the previous
+# commit's source into ./dist.
 COPY . .
 # Compose runs this as the host's uid so ./dist stays host-owned, but that uid does
 # not exist in the image and /app is root-owned — `tsc -b` needs to write its
