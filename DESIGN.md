@@ -35,6 +35,7 @@ All colors are CSS variables in `src/index.css`, exposed to Tailwind via `@theme
 | `--muted` | `#646B78` | `#8E8E93` | timestamps, placeholders, inactive icons |
 | `--accent` | `#0E7490` | `#22B8CF` | active state, focus ring, links, primary action |
 | `--accent-soft` | `rgba(14,116,144,.12)` | `rgba(34,184,207,.16)` | active row background, chip fill |
+| `--selection` | `rgba(14,116,144,.24)` | `rgba(34,184,207,.30)` | selected text, everywhere — `::selection` and the advanced editor alike. Stronger than `--accent-soft`, which tints a whole row; this one sits directly behind body text and must read as selected while leaving `--ink` at full contrast |
 | `--separator` | `rgba(15,23,42,.12)` | `rgba(255,255,255,.14)` | hairlines, dividers, section edges |
 | `--scrim` | `rgba(15,23,42,.48)` | `rgba(0,0,0,.62)` | behind every modal layer |
 | `--scrollbar` | `rgba(15,23,42,.22)` | `rgba(255,255,255,.18)` | scrollbar thumb (`-hover` variant is darker/lighter) |
@@ -301,6 +302,20 @@ control needs an account shows the sign-in CTA in the control slot; it is **neve
 disabled-and-greyed — the row explains what an account adds (PRODUCT.md principle 1). Destructive
 rows use the `danger` Button variant, not a red row background. Rows that report live state
 (sync status, queue depth) carry `aria-live="polite"`, per §8.
+
+**Switch** — the on/off control for a settings row, never a native `<input type=checkbox>`: the
+native box is drawn by the OS, ignores every token here, and `accent-color` recolours one pixel of
+it while leaving the shape and the focus ring foreign. A 44×26 `--r-full` track — `--fill` off,
+`--accent` on — with a `--surface` thumb carrying `--e-1`. The thumb moves by **`inset-inline-start`**,
+not a translate, so it travels toward the inline-end in both directions without an RTL special case
+(§7). `role="switch"` with `aria-checked`; the hit area is the whole 44px row height (§8).
+
+**Advanced editor (experimental)** — when `settings.experimentalEditor` is on, the body field is
+CodeMirror rather than a `<textarea>`. It inherits the editor sheet's focus tier: focusing it lights
+the sheet's border and the surface itself draws **no** ring of its own (§8), the way the textarea
+already behaves. It carries no chrome — no gutter, no line numbers, no separate scroll container
+(§2) — because it is a page of writing, not a code pane. Secondary carets use the same `--ink` as
+the primary one; the selection fill is `--accent-soft`, matching every other "selected" surface here.
 
 **Toast** — bottom-center (bottom-inline-start on desktop), glass `panel`, enters/exits from the bottom, swipe-to-dismiss with velocity threshold. Destructive actions use an **undo toast**, not a confirm dialog.
 

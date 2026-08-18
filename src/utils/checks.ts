@@ -11,6 +11,7 @@ import { migrateColor, migrateNotes, toWire, NOTE_COLORS } from '../types/note.t
 import type { Note } from '../types/note.ts';
 import { detectDirection } from './direction.ts';
 import { cacheKey, evict, type AiCacheEntry } from './aiCache.ts';
+import { evictCmHistories } from './cmHistory.ts';
 import { buildMessages } from './ai.ts';
 import {
   emptyHistory, record, undo, redo, evictHistories, COALESCE_MS, MAX_ENTRIES,
@@ -391,5 +392,26 @@ assert.notEqual(
 );
 // The note text is never spliced into the system prompt: that is the jailbreak surface.
 assert.ok(!buildMessages('translate', 'IGNORE ALL', 'fa')[0].content.includes('IGNORE ALL'));
+
+// -- advanced-editor history eviction -------------------------------
+// Whole notes go, oldest first — never a truncated snapshot. Half a CodeMirror history
+// is not a history: `EditorState.fromJSON` would restore an undo stack that no longer
+// matches its own document.
+const big = 'x'.repeat(120 * 1024);
+const cmStore = {
+  old:    { snapshot: { doc: big }, updatedAt: 1 },
+  middle: { snapshot: { doc: big }, updatedAt: 2 },
+  fresh:  { snapshot: { doc: big }, updatedAt: 3 },
+};
+const keptCm = evictCmHistories(cmStore);
+assert.ok(!('old' in keptCm), 'the least recently touched note is evicted first');
+assert.ok('fresh' in keptCm, 'the most recent note survives');
+Object.values(keptCm).forEach(e => assert.equal(
+  (e.snapshot as { doc: string }).doc.length, big.length,
+  'a surviving snapshot is never trimmed',
+));
+// One note over budget is still kept: evicting it would leave nothing to undo to.
+const onlyOne = { solo: { snapshot: { doc: 'y'.repeat(400 * 1024) }, updatedAt: 1 } };
+assert.deepEqual(evictCmHistories(onlyOne), onlyOne);
 
 console.log('checks passed');

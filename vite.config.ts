@@ -35,6 +35,18 @@ export default defineConfig({
         // App shell + fonts. All data lives in localStorage, so precaching the shell
         // is the whole offline story — no runtime caching rules needed.
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        // The experimental editor's chunk is lazily imported precisely so users who
+        // never turn it on do not download it — precaching it would hand all 275kB to
+        // everyone through the back door. It is cached on first use instead, so it is
+        // still there offline for the users who do enable it.
+        globIgnores: ['**/CodeEditor-*.js'],
+        runtimeCaching: [
+          {
+            urlPattern: /\/assets\/CodeEditor-.*\.js$/,
+            handler: 'CacheFirst',
+            options: { cacheName: 'code-editor' },
+          },
+        ],
         cleanupOutdatedCaches: true,
       },
     }),

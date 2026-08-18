@@ -5,6 +5,7 @@ import { migrateNotes } from '../types/note';
 import { getItem, setItem } from '../utils/storage';
 import { clearPushed, mergeNotes } from '../utils/merge';
 import { dropHistory } from './useHistory';
+import { dropCmHistory } from '../utils/cmHistory';
 
 const STORAGE_KEY = 'notebook_notes';
 
@@ -80,6 +81,7 @@ export function useNotes() {
   const permanentDelete = useCallback((id: string) => {
     // The note is gone for good, so its undo history has nothing left to describe.
     dropHistory(id);
+    dropCmHistory(id);
     setNotes(prev => {
       const updated = prev.filter(n => n.id !== id);
       persist(updated);

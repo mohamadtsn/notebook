@@ -30,11 +30,21 @@ export function useKeyboardShortcuts({
       }
 
       if (e.key === 'Escape') {
+        // Something closer to the keypress already answered it — the advanced editor
+        // collapsing a multi-cursor selection is the case that forced this. Closing the
+        // note as well would make one press mean two things.
+        if (e.defaultPrevented) return;
         // A dialog owns its own Escape. Without this the note is deselected behind an
         // open palette / auth form / settings panel while that layer closes.
         if (document.querySelector('[role="dialog"]')) return;
         const active = document.activeElement;
-        if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+        // `isContentEditable` covers the advanced editor: it is a writing surface, not
+        // a form control, and dropping it here closed the note instead of blurring.
+        if (
+          active instanceof HTMLInputElement
+          || active instanceof HTMLTextAreaElement
+          || (active instanceof HTMLElement && active.isContentEditable)
+        ) {
           active.blur();
         } else {
           onDeselect();

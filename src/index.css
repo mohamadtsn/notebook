@@ -15,6 +15,7 @@
   --color-muted:       var(--muted);
   --color-accent:      var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-selection:   var(--selection);
   --color-on-accent:   var(--on-accent);
   --color-separator:   var(--separator);
   --color-destructive: var(--destructive);
@@ -47,6 +48,10 @@
   --muted:       #646B78;
   --accent:      #0E7490;
   --accent-soft: rgba(14, 116, 144, .12);
+  /* Text selection. Deliberately stronger than --accent-soft: that one tints a whole
+     row or chip, this one sits directly behind body text and has to read as selected
+     at a glance while leaving --ink at its full contrast. */
+  --selection:   rgba(14, 116, 144, .24);
   --separator:   rgba(15, 23, 42, .12);
   --fill:        rgba(15, 23, 42, .05);
   --destructive: #D01E1E;
@@ -92,6 +97,7 @@
   --muted:       #8E8E93;
   --accent:      #22B8CF;
   --accent-soft: rgba(34, 184, 207, .16);
+  --selection:   rgba(34, 184, 207, .30);
   --separator:   rgba(255, 255, 255, .14);
   --fill:        rgba(255, 255, 255, .07);
   --destructive: #F87171;
@@ -185,6 +191,13 @@ button:not(:disabled) { cursor: pointer; }
    and a transition has nothing to transition *from* on mount. */
 @keyframes tooltip-in {
   from { opacity: 0; transform: scale(.94); }
+}
+
+/* One selection colour for the whole app: the plain textarea uses the browser's
+   native highlight and the advanced editor draws its own, and two different blues
+   for "selected text" is one too many. */
+::selection {
+  background: var(--selection);
 }
 
 @media (prefers-reduced-motion: reduce) {

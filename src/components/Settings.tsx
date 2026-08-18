@@ -9,6 +9,7 @@ import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 import { SegmentedControl } from './ui/SegmentedControl';
 import { Select } from './ui/Select';
+import { Switch } from './ui/Switch';
 import { popIn } from '../lib/motion';
 import { TARGET_LANGS } from '../utils/ai';
 import { aiCacheSize, clearAiCache } from '../utils/aiCache';
@@ -97,6 +98,17 @@ export function Settings(props: SettingsProps) {
                 value={settings.theme}
                 onChange={theme => onUpdate({ theme })}
                 label="پوسته"
+              />
+            </Field>
+
+            <Field
+              label="ادیتور پیشرفته"
+              description="آزمایشی. چند نشانگر با Alt + کلیک. ممکن است در متن فارسی دقیق نباشد."
+            >
+              <Switch
+                checked={settings.experimentalEditor}
+                onChange={experimentalEditor => onUpdate({ experimentalEditor })}
+                label="ادیتور پیشرفته (آزمایشی)"
               />
             </Field>
           </Section>
@@ -253,12 +265,10 @@ function AiSection({ settings, onUpdateAi, email, onSignIn }: SettingsProps) {
         description={`${cacheCount} پاسخ ذخیره شده؛ درخواست تکراری دوباره ارسال نمی‌شود.`}
       >
         <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
+          <Switch
             checked={settings.ai.cache}
-            onChange={e => onUpdateAi({ cache: e.target.checked })}
-            aria-label="فعال بودن حافظهٔ پاسخ‌ها"
-            className="size-5 accent-[var(--accent)]"
+            onChange={cache => onUpdateAi({ cache })}
+            label="فعال بودن حافظهٔ پاسخ‌ها"
           />
           <Button
             variant="ghost"

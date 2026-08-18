@@ -115,6 +115,52 @@ persisted under `notebook_history`, because the editor remounts on every note sw
 in `App`) — history in component state would die there. Steps coalesce inside 700ms, cap at 100 per
 note, and whole notes are evicted (never truncated) at 512KB.
 
+## Advanced editor (experimental, off by default)
+
+`settings.experimentalEditor` swaps the body `<textarea>` for CodeMirror 6
+(`src/components/CodeEditor.tsx`), because a textarea cannot place a second caret at all. The
+component takes the same props the textarea path uses, so `Editor.tsx` branches in one place
+rather than forking.
+
+- **It is `lazy()`-imported, and the service worker must keep it that way.** `vite.config.ts`
+  `globIgnores` the `CodeEditor-*.js` chunk out of the precache and caches it at runtime instead —
+  precaching would hand all 275KB to every user through the back door, which is the exact thing the
+  dynamic import exists to prevent. After touching the chunking, check `npm run build`: the main
+  bundle and the precache total must not grow.
+- **Undo in this mode is CodeMirror's, not `utils/history.ts`.** A `{value, start, end}` entry
+  cannot represent a multi-range edit, so running both stacks would let them diverge. It is
+  persisted anyway, in `utils/cmHistory.ts` (`notebook_cm_history`): CodeMirror serialises its own
+  stack through `historyField`, so what is stored is the editor's real history rather than a
+  re-derivation of it. The store is module-scope for the same reason `useHistory`'s is — the editor
+  remounts on every note switch. A snapshot is **only restored when `snapshot.doc` still equals the
+  note body**; a sync or another tab can move the text underneath it, and replaying a stack against
+  a document it was not recorded against undoes into text the user never wrote. Whole notes are
+  evicted at 256KB, never truncated: `EditorState.fromJSON` on half a history is worse than no
+  history.
+- **Alt+click adds a caret** (`clickAddsSelectionRange`), which is VS Code's binding and what the
+  settings row promises; CodeMirror's own Ctrl/Cmd+click still works. Column select therefore moves
+  to **Shift+Alt+drag**, because plain Alt+drag is the drag half of Alt+click.
+- **Colours come from tokens, and two of the overrides are load-bearing.** The caret is set with
+  the *physical* `borderLeftColor` — CodeMirror hard-codes the caret as a `border-left` on both
+  sides of a bidi boundary, so a `border-inline-start` override lands on the wrong edge in RTL and
+  the caret stays base-theme black. The focused selection has to be written out as
+  `&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground`, matching the base
+  theme's own specificity, or the stock grey wins. `&light` / `&dark` are `baseTheme`-only syntax
+  and throw "Unsupported selector" inside `EditorView.theme`.
+- The view is **hidden, never unmounted**, in preview, for the same reason as the textarea, and
+  gets a `requestMeasure()` on the way back — measurements taken under `display: none` are stale.
+- `Escape` now means two things, so `useKeyboardShortcuts` bails on `e.defaultPrevented`: CodeMirror
+  collapses a multi-cursor selection and marks the event handled, and without that check the note
+  would also close. The same handler treats any `isContentEditable` element as a writing surface —
+  the advanced editor is not an `<input>`, so it used to fall through to "deselect the note".
+
+**RTL was measured, not assumed** (the phase's deletion criterion). Sweeping click positions across
+`سلام hello دنیا world پایان` and comparing caret offsets against the plain textarea: identical at
+16 of 17 positions and for `Home`/`End`; the one difference is the caret affinity exactly at a
+Persian↔English run boundary, where offsets 5 and 10 are the same visual point and both are valid.
+Drag-selection matches on two of three gestures, differing only at that same boundary. Parity, so
+the phase ships.
+
 ## Backend (`server/`)
 
 Fastify 5 + SQLite, storage only — no business logic beyond sync. **No build step**: Node 24 strips

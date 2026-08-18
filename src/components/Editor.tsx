@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Undo2 } from 'lucide-react';
 import { easeOut } from '../lib/motion';
@@ -14,6 +14,11 @@ import { AiResult } from './AiResult';
 import { useToast } from './ui/toast-context';
 import type { AiTask } from '../utils/aiCache';
 import type { Settings } from '../types/settings';
+import type { CodeEditorHandle } from './CodeEditor';
+
+// Lazily imported so the CodeMirror chunk is downloaded only by users who turn the
+// experimental editor on. Everyone else never pays for it.
+const CodeEditor = lazy(() => import('./CodeEditor').then(m => ({ default: m.CodeEditor })));
 
 interface EditorProps {
   note: Note;
@@ -91,6 +96,8 @@ export function Editor({
     to: Math.max(el.selectionStart, el.selectionEnd),
   });
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const cmRef = useRef<CodeEditorHandle | null>(null);
+  const advanced = settings.experimentalEditor;
 
   // Undo history outlives this component: it is keyed by note id and persisted, so it
   // survives note switches, the preview toggle, and a reload. See utils/history.ts.
@@ -123,6 +130,7 @@ export function Editor({
   // jumped the view upward while typing near the bottom. Restore it in the same
   // layout pass, before paint.
   useLayoutEffect(() => {
+    if (advanced) return;   // CodeMirror sizes itself
     const el = bodyRef.current;
     if (!el) return;
     const scroller = el.parentElement;
@@ -130,7 +138,7 @@ export function Editor({
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
     if (scroller) scroller.scrollTop = top;
-  }, [body, mode]);
+  }, [body, mode, advanced]);
 
   // Persistence is synchronous inside the state updater (see useNotes), so
   // "not waiting on the debounce" is the same thing as "saved" — no timer needed.
@@ -155,9 +163,10 @@ export function Editor({
   const focusBody = (e: React.MouseEvent) => {
     if (e.target !== e.currentTarget) return;
     if (isTrash || mode === 'preview') return;
+    e.preventDefault();
+    if (advanced) return cmRef.current?.focusEnd();
     const el = bodyRef.current;
     if (!el) return;
-    e.preventDefault();
     el.focus();
     el.setSelectionRange(el.value.length, el.value.length);
   };
@@ -210,6 +219,7 @@ export function Editor({
     history.push({ value, start, end }, true);
     // The value lands on the next render, so the selection is restored after it.
     requestAnimationFrame(() => {
+      if (advanced) return cmRef.current?.select(start, end);
       const el = bodyRef.current;
       if (!el) return;
       el.focus();
@@ -318,28 +328,51 @@ export function Editor({
             Height is driven by content (see the effect above) so the *page* scrolls,
             not a box inside it. A nested scroller here also put a scrollbar on an
             empty note. */}
-        <textarea
-          hidden={mode === 'preview'}
-          ref={bodyRef}
-          value={body}
-          onChange={e => {
-            setBody(e.target.value);
-            setTouched(true);
-            history.push({
-              value: e.target.value,
-              start: e.target.selectionStart,
-              end: e.target.selectionEnd,
-            });
-          }}
-          onContextMenu={openMenu}
-          onKeyDown={onBodyKeyDown}
-          placeholder="شروع کنید به نوشتن..."
-          aria-label="متن یادداشت"
-          dir={bodyDir}
-          disabled={isTrash}
-          rows={1}
-          className={`w-full resize-none overflow-hidden border-none bg-transparent py-3 text-base leading-[1.8] text-ink outline-none placeholder:text-muted disabled:opacity-60 ${gutter}`}
-        />
+        {advanced ? (
+          /* No spinner: the chunk resolves in a frame, and a flash of loading UI where
+             the text will be is worse than a beat of nothing. */
+          <Suspense fallback={<div className={`py-3 ${gutter}`} />}>
+            <div className={`py-3 ${gutter}`}>
+              <CodeEditor
+                ref={cmRef}
+                noteId={note.id}
+                value={body}
+                onChange={v => { setBody(v); setTouched(true); }}
+                dir={bodyDir}
+                disabled={isTrash}
+                hidden={mode === 'preview'}
+                onRequestMenu={(x, y, keyboard) => {
+                  const sel = cmRef.current?.selection();
+                  if (!sel) return;
+                  setMenu({ x, y, keyboard, ...sel });
+                }}
+              />
+            </div>
+          </Suspense>
+        ) : (
+          <textarea
+            hidden={mode === 'preview'}
+            ref={bodyRef}
+            value={body}
+            onChange={e => {
+              setBody(e.target.value);
+              setTouched(true);
+              history.push({
+                value: e.target.value,
+                start: e.target.selectionStart,
+                end: e.target.selectionEnd,
+              });
+            }}
+            onContextMenu={openMenu}
+            onKeyDown={onBodyKeyDown}
+            placeholder="شروع کنید به نوشتن..."
+            aria-label="متن یادداشت"
+            dir={bodyDir}
+            disabled={isTrash}
+            rows={1}
+            className={`w-full resize-none overflow-hidden border-none bg-transparent py-3 text-base leading-[1.8] text-ink outline-none placeholder:text-muted disabled:opacity-60 ${gutter}`}
+          />
+        )}
       </div>
 
       {menu && (
@@ -359,7 +392,7 @@ export function Editor({
           })}
           autoFocus={menu.keyboard}
           onMove={groupId => onSetGroup(note.id, groupId)}
-          onClose={() => { setMenu(null); bodyRef.current?.focus(); }}
+          onClose={() => { setMenu(null); if (advanced) cmRef.current?.select(menu.from, menu.to); else bodyRef.current?.focus(); }}
         />
       )}
 
@@ -385,7 +418,9 @@ export function Editor({
               );
               return;
             }
-            const at = bodyRef.current?.selectionStart ?? body.length;
+            const at = advanced
+              ? cmRef.current?.selection().from ?? body.length
+              : bodyRef.current?.selectionStart ?? body.length;
             applyBody(body.slice(0, at) + result + body.slice(at), at, at + result.length);
             toast('متن از زمان درخواست تغییر کرده بود؛ نتیجه در محل مکان‌نما درج شد');
           }}
