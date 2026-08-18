@@ -3,10 +3,17 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Undo2 } from 'lucide-react';
 import { easeOut } from '../lib/motion';
 import type { Note, NoteColor } from '../types/note';
+import type { Group } from '../types/group';
 import { useDebounce } from '../hooks/useDebounce';
+import { useHistory } from '../hooks/useHistory';
 import { useTextDirection } from '../hooks/useTextDirection';
 import { renderMarkdown } from '../utils/markdown';
 import { EditorToolbar, type EditorMode } from './EditorToolbar';
+import { EditorContextMenu } from './EditorContextMenu';
+import { AiResult } from './AiResult';
+import { useToast } from './ui/toast-context';
+import type { AiTask } from '../utils/aiCache';
+import type { Settings } from '../types/settings';
 
 interface EditorProps {
   note: Note;
@@ -17,6 +24,11 @@ interface EditorProps {
   onPermanentDelete: (id: string) => void;
   onTogglePin: (id: string) => void;
   onSetColor: (id: string, color: NoteColor | null) => void;
+  groups: Group[];
+  onSetGroup: (id: string, groupId: string | null) => void;
+  settings: Settings;
+  token: string | null;
+  onOpenSettings: () => void;
 }
 
 function formatTime(ms: number): string {
@@ -56,12 +68,39 @@ export function Editor({
   onPermanentDelete,
   onTogglePin,
   onSetColor,
+  groups,
+  onSetGroup,
+  settings,
+  token,
+  onOpenSettings,
 }: EditorProps) {
   const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
   const [touched, setTouched] = useState(false);
   const [mode, setMode] = useState<EditorMode>('write');
+  // The selection is captured when the menu opens, not read later: the textarea loses
+  // it the moment a menu item takes focus.
+  const [menu, setMenu] = useState<
+    { x: number; y: number; value: string; from: number; to: number; keyboard: boolean } | null
+  >(null);
+
+  const openMenuAt = (x: number, y: number, el: HTMLTextAreaElement, keyboard = false) => setMenu({
+    x, y, keyboard,
+    value: el.value,
+    from: Math.min(el.selectionStart, el.selectionEnd),
+    to: Math.max(el.selectionStart, el.selectionEnd),
+  });
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+  // Undo history outlives this component: it is keyed by note id and persisted, so it
+  // survives note switches, the preview toggle, and a reload. See utils/history.ts.
+  const history = useHistory(note.id, note.body);
+  const { toast } = useToast();
+
+  /** The AI popover, opened from the context menu and anchored where it was. */
+  const [ai, setAi] = useState<
+    { x: number; y: number; task: AiTask; text: string; from: number; to: number } | null
+  >(null);
 
   const debouncedTitle = useDebounce(title, 500);
   const debouncedBody  = useDebounce(body, 500);
@@ -101,6 +140,104 @@ export function Editor({
   // Shared inline padding: the text column is the sheet, edge to edge.
   const gutter = 'px-5 sm:px-8 lg:px-12';
 
+  /**
+   * Click-to-write. The guard matters: without it, a click that lands on the title,
+   * the textarea, the toolbar, or the trash banner would be hijacked and move the
+   * caret away from where the user actually pressed.
+   *
+   * The caret goes to the END of the body, not index 0 — clicking below a document
+   * means "keep writing", not "jump to the top".
+   *
+   * `preventDefault` is what makes this work at all: mousedown's default action moves
+   * focus to the nearest focusable ancestor, and these wrappers are not focusable, so
+   * the browser would blur the textarea again the instant this handler returned.
+   */
+  const focusBody = (e: React.MouseEvent) => {
+    if (e.target !== e.currentTarget) return;
+    if (isTrash || mode === 'preview') return;
+    const el = bodyRef.current;
+    if (!el) return;
+    e.preventDefault();
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  };
+
+  /**
+   * Shift passes straight through to the browser's own menu — Persian spellcheck
+   * suggestions live there and taking them away is a regression, not a redesign.
+   * The same applies wherever the menu's actions cannot apply: preview and trash.
+   */
+  const openMenu = (e: React.MouseEvent) => {
+    if (e.shiftKey || isTrash || mode === 'preview') return;
+    const el = bodyRef.current;
+    if (!el) return;
+    e.preventDefault();
+    openMenuAt(e.clientX, e.clientY, el);
+  };
+
+  /** Shift+F10 / the Menu key, anchored to the textarea. DESIGN.md §6, §8. */
+  const onBodyKeyDown = (e: React.KeyboardEvent) => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && (e.key === 'z' || e.key === 'Z')) {
+      e.preventDefault();
+      applyStep(e.shiftKey ? 'redo' : 'undo');
+      return;
+    }
+    if (mod && (e.key === 'y' || e.key === 'Y')) {
+      e.preventDefault();
+      applyStep('redo');
+      return;
+    }
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      e.preventDefault();
+      const el = e.currentTarget as HTMLTextAreaElement;
+      const r = el.getBoundingClientRect();
+      openMenuAt(r.left + 24, r.top + 24, el, true);
+    }
+  };
+
+  /**
+   * The single write path for programmatic edits (menu actions, AI replacement). It goes
+   * through the ordinary draft state, so the 500ms debounce, the `dirty` stamp and the
+   * save indicator all behave as if the user had typed it — and it is recorded in the
+   * history, so it is undoable like any other edit.
+   */
+  const applyBody = (value: string, start: number, end: number) => {
+    setBody(value);
+    setTouched(true);
+    // `discrete`: a menu action is one deliberate act, so it gets its own undo step
+    // instead of merging into whatever was typed a moment earlier.
+    history.push({ value, start, end }, true);
+    // The value lands on the next render, so the selection is restored after it.
+    requestAnimationFrame(() => {
+      const el = bodyRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(start, end);
+    });
+  };
+
+  const replaceRange = (from: number, to: number, text: string) => {
+    applyBody(body.slice(0, from) + text + body.slice(to), from + text.length, from + text.length);
+  };
+
+  /**
+   * Our history replaces the browser's, so the native shortcuts have to be taken over:
+   * leaving them alone would run the element's own (now out-of-sync) stack alongside ours.
+   */
+  const applyStep = (dir: 'undo' | 'redo') => {
+    const entry = history.step(dir);
+    if (!entry) return;
+    setBody(entry.value);
+    setTouched(true);
+    requestAnimationFrame(() => {
+      const el = bodyRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(entry.start, entry.end);
+    });
+  };
+
   return (
     // Keyed on the note id by App, so this plays on every note switch.
     // The card fills the pane and starts at the pane's top edge — the navbar
@@ -109,10 +246,7 @@ export function Editor({
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: easeOut }}
-      onMouseDown={e => {
-        // Clicking the sheet's margins should start writing, not do nothing.
-        if (e.target === e.currentTarget) bodyRef.current?.focus();
-      }}
+      onMouseDown={focusBody}
       className={[
         'relative flex h-full flex-col overflow-hidden rounded-2xl border border-separator bg-surface shadow-e2',
         'transition-[border-color] duration-(--d-base) ease-out-strong',
@@ -126,6 +260,8 @@ export function Editor({
       <div className="absolute inset-e-3 top-3 z-20 sm:inset-e-5">
         <EditorToolbar
           note={note}
+          groups={groups}
+          onMove={groupId => onSetGroup(note.id, groupId)}
           isTrash={isTrash}
           mode={mode}
           onModeChange={setMode}
@@ -140,7 +276,7 @@ export function Editor({
 
       {/* One scroll container for the whole document — title included, because a
           title is part of the page, not a form field pinned above it. */}
-      <div className="min-h-0 flex-1 overflow-y-auto pt-18 pb-10">
+      <div onMouseDown={focusBody} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pt-18 pb-10">
         {isTrash && (
           <div className={`mb-4 flex items-center justify-between rounded-lg bg-destructive/10 py-2 ${gutter}`}>
             <span className="text-xs text-destructive">این یادداشت در سطل زباله است</span>
@@ -167,29 +303,96 @@ export function Editor({
           className={`w-full border-none bg-transparent pb-1 text-[1.75rem] font-semibold leading-tight tracking-[-0.02em] text-ink outline-none placeholder:text-muted disabled:opacity-60 ${gutter}`}
         />
 
-        {mode === 'preview' ? (
+        {mode === 'preview' && (
           <div
             className={`markdown-preview py-3 ${gutter}`}
-            dir={bodyDir}
+          dir={bodyDir}
             dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
           />
-        ) : (
-          // Height is driven by content (see the effect above) so the *page*
-          // scrolls, not a box inside it. A nested scroller here also put a
-          // scrollbar on an empty note.
-          <textarea
-            ref={bodyRef}
-            value={body}
-            onChange={e => { setBody(e.target.value); setTouched(true); }}
-            placeholder="شروع کنید به نوشتن..."
-            aria-label="متن یادداشت"
-            dir={bodyDir}
-            disabled={isTrash}
-            rows={1}
-            className={`w-full resize-none overflow-hidden border-none bg-transparent py-3 text-base leading-[1.8] text-ink outline-none placeholder:text-muted disabled:opacity-60 ${gutter}`}
-          />
         )}
+
+        {/* Hidden in preview, never unmounted: the browser's undo stack belongs to the
+            element, so unmounting this to show the preview threw away every Ctrl+Z the
+            user had.
+
+            Height is driven by content (see the effect above) so the *page* scrolls,
+            not a box inside it. A nested scroller here also put a scrollbar on an
+            empty note. */}
+        <textarea
+          hidden={mode === 'preview'}
+          ref={bodyRef}
+          value={body}
+          onChange={e => {
+            setBody(e.target.value);
+            setTouched(true);
+            history.push({
+              value: e.target.value,
+              start: e.target.selectionStart,
+              end: e.target.selectionEnd,
+            });
+          }}
+          onContextMenu={openMenu}
+          onKeyDown={onBodyKeyDown}
+          placeholder="شروع کنید به نوشتن..."
+          aria-label="متن یادداشت"
+          dir={bodyDir}
+          disabled={isTrash}
+          rows={1}
+          className={`w-full resize-none overflow-hidden border-none bg-transparent py-3 text-base leading-[1.8] text-ink outline-none placeholder:text-muted disabled:opacity-60 ${gutter}`}
+        />
       </div>
+
+      {menu && (
+        <EditorContextMenu
+          x={menu.x}
+          y={menu.y}
+          value={menu.value}
+          from={menu.from}
+          to={menu.to}
+          groups={groups}
+          currentGroupId={note.groupId}
+          onReplace={replaceRange}
+          onAi={task => setAi({
+            x: menu.x, y: menu.y, task,
+            text: menu.value.slice(menu.from, menu.to),
+            from: menu.from, to: menu.to,
+          })}
+          autoFocus={menu.keyboard}
+          onMove={groupId => onSetGroup(note.id, groupId)}
+          onClose={() => { setMenu(null); bodyRef.current?.focus(); }}
+        />
+      )}
+
+      {ai && (
+        <AiResult
+          x={ai.x}
+          y={ai.y}
+          task={ai.task}
+          text={ai.text}
+          settings={settings}
+          token={token}
+          onReplace={result => {
+            /**
+             * The offsets were captured before the request. If the text there is no
+             * longer what was sent — the user kept editing while it was in flight —
+             * writing to them would destroy something they never asked to replace.
+             * The result is not thrown away either; it goes in at the caret.
+             */
+            if (body.slice(ai.from, ai.to) === ai.text) {
+              applyBody(
+                body.slice(0, ai.from) + result + body.slice(ai.to),
+                ai.from, ai.from + result.length,
+              );
+              return;
+            }
+            const at = bodyRef.current?.selectionStart ?? body.length;
+            applyBody(body.slice(0, at) + result + body.slice(at), at, at + result.length);
+            toast('متن از زمان درخواست تغییر کرده بود؛ نتیجه در محل مکان‌نما درج شد');
+          }}
+          onOpenSettings={() => { setAi(null); onOpenSettings(); }}
+          onClose={() => setAi(null)}
+        />
+      )}
 
       {/* Footer holds status only — every action moved to the toolbar */}
       <div className={`flex shrink-0 items-center gap-2 border-t border-separator py-2.5 text-xs text-muted ${gutter}`}>

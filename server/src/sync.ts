@@ -19,6 +19,27 @@ const noteSchema = {
     createdAt: { type: 'integer', minimum: 0 },
     updatedAt: { type: 'integer', minimum: 0 },
     deletedAt: { type: ['integer', 'null'], minimum: 0 },
+    // Must ship in the same change as the client's toWire: `additionalProperties:
+    // false` means a client sending groupId without this has its ENTIRE push rejected.
+    groupId: { type: ['string', 'null'], maxLength: 64 },
+  },
+} as const;
+
+const MAX_GROUP_NAME = 60;
+const MAX_GROUPS_PER_PUSH = 200;
+
+const groupSchema = {
+  type: 'object',
+  required: ['id', 'name', 'createdAt', 'updatedAt'],
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', minLength: 1, maxLength: 64 },
+    name: { type: 'string', maxLength: MAX_GROUP_NAME },
+    color: { type: ['string', 'null'], maxLength: 20 },
+    order: { type: 'number' },
+    createdAt: { type: 'integer', minimum: 0 },
+    updatedAt: { type: 'integer', minimum: 0 },
+    deletedAt: { type: ['integer', 'null'], minimum: 0 },
   },
 } as const;
 
@@ -31,6 +52,27 @@ interface WireNote {
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
+  groupId: string | null;
+}
+
+interface WireGroup {
+  id: string;
+  name: string;
+  color: string | null;
+  order: number;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+}
+
+interface GroupRow {
+  id: string;
+  name: string;
+  color: string | null;
+  sort_order: number;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
 }
 
 interface Row {
@@ -42,7 +84,18 @@ interface Row {
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
+  group_id: string | null;
 }
+
+const toWireGroup = (r: GroupRow): WireGroup => ({
+  id: r.id,
+  name: r.name,
+  color: r.color,
+  order: r.sort_order,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+  deletedAt: r.deleted_at,
+});
 
 const toWire = (r: Row): WireNote => ({
   id: r.id,
@@ -53,6 +106,7 @@ const toWire = (r: Row): WireNote => ({
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   deletedAt: r.deleted_at,
+  groupId: r.group_id,
 });
 
 export async function syncRoutes(app: FastifyInstance, db: Db) {
@@ -60,13 +114,25 @@ export async function syncRoutes(app: FastifyInstance, db: Db) {
   // another user matches nothing and is never read or overwritten.
   const stored = db.prepare('SELECT updated_at FROM notes WHERE id = ? AND user_id = ?');
   const upsert = db.prepare(`
-    INSERT INTO notes (id, user_id, title, body, color, pinned, created_at, updated_at, deleted_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO notes (id, user_id, title, body, color, pinned, created_at, updated_at, deleted_at, group_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id, user_id) DO UPDATE SET
       title = excluded.title, body = excluded.body, color = excluded.color,
       pinned = excluded.pinned, updated_at = excluded.updated_at,
-      deleted_at = excluded.deleted_at
+      deleted_at = excluded.deleted_at, group_id = excluded.group_id
   `);
+
+  const storedGroup = db.prepare('SELECT updated_at FROM groups WHERE id = ? AND user_id = ?');
+  const upsertGroup = db.prepare(`
+    INSERT INTO groups (id, user_id, name, color, sort_order, created_at, updated_at, deleted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id, user_id) DO UPDATE SET
+      name = excluded.name, color = excluded.color, sort_order = excluded.sort_order,
+      updated_at = excluded.updated_at, deleted_at = excluded.deleted_at
+  `);
+  const groupsSince = db.prepare(
+    'SELECT * FROM groups WHERE user_id = ? AND updated_at > ? ORDER BY updated_at',
+  );
   const since = db.prepare(
     'SELECT * FROM notes WHERE user_id = ? AND updated_at > ? ORDER BY updated_at',
   );
@@ -80,13 +146,15 @@ export async function syncRoutes(app: FastifyInstance, db: Db) {
         additionalProperties: false,
         properties: {
           notes: { type: 'array', maxItems: MAX_NOTES_PER_PUSH, items: noteSchema },
+          groups: { type: 'array', maxItems: MAX_GROUPS_PER_PUSH, items: groupSchema },
         },
       },
     },
   }, async req => {
     const uid = userId(req);
-    const { notes } = req.body as { notes: WireNote[] };
+    const { notes, groups = [] } = req.body as { notes: WireNote[]; groups?: WireGroup[] };
     const rejected: string[] = [];
+    const rejectedGroups: string[] = [];
 
     for (const n of notes) {
       const row = stored.get(n.id, uid) as { updated_at: number } | undefined;
@@ -97,11 +165,23 @@ export async function syncRoutes(app: FastifyInstance, db: Db) {
       }
       upsert.run(
         n.id, uid, n.title, n.body, n.color ?? null, n.pinned ? 1 : 0,
-        n.createdAt, n.updatedAt, n.deletedAt ?? null,
+        n.createdAt, n.updatedAt, n.deletedAt ?? null, n.groupId ?? null,
       );
     }
 
-    return { serverTime: Date.now(), rejected };
+    for (const g of groups) {
+      const row = storedGroup.get(g.id, uid) as { updated_at: number } | undefined;
+      if (row && row.updated_at > g.updatedAt) {
+        rejectedGroups.push(g.id);
+        continue;
+      }
+      upsertGroup.run(
+        g.id, uid, g.name, g.color ?? null, g.order ?? 1,
+        g.createdAt, g.updatedAt, g.deletedAt ?? null,
+      );
+    }
+
+    return { serverTime: Date.now(), rejected, rejectedGroups };
   });
 
   app.get('/sync/pull', {
@@ -117,6 +197,7 @@ export async function syncRoutes(app: FastifyInstance, db: Db) {
     const { since: cursor } = req.query as { since: number };
     return {
       notes: (since.all(userId(req), cursor) as unknown as Row[]).map(toWire),
+      groups: (groupsSince.all(userId(req), cursor) as unknown as GroupRow[]).map(toWireGroup),
       serverTime: Date.now(),
     };
   });

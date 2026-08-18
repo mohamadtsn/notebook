@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { ArrowDownAZ, Clock, History, Search, Trash2 } from 'lucide-react';
 import type { Note } from '../types/note';
+import type { Group, GroupFilter } from '../types/group';
 import { NoteItem } from './NoteItem';
+import { NoteContextMenu } from './NoteContextMenu';
+import { GroupStrip } from './GroupStrip';
 import { IconButton } from './ui/IconButton';
 import { cx } from './ui/cx';
 import { getItem, setItem } from '../utils/storage';
@@ -32,11 +35,33 @@ interface SidebarProps {
   onViewChange: (v: View) => void;
   onSelect: (id: string) => void;
   onOpenSearch: () => void;
+  groups: Group[];
+  groupCounts: Map<GroupFilter, number>;
+  selectedGroup: GroupFilter;
+  onSelectGroup: (id: GroupFilter) => void;
+  onCreateGroup: (name: string) => void;
+  onRenameGroup: (id: string, name: string) => void;
+  onDeleteGroup: (id: string) => void;
+  onMoveNote: (id: string, groupId: string | null) => void;
+  onTogglePin: (id: string) => void;
+  onTrashNote: (id: string) => void;
+  onRestoreNote: (id: string) => void;
+  onPermanentDelete: (id: string) => void;
 }
 
 export function Sidebar({
   notes, trashedNotes, activeNoteId, view, onViewChange, onSelect, onOpenSearch,
+  groups, groupCounts, selectedGroup, onSelectGroup, onCreateGroup, onRenameGroup, onDeleteGroup,
+  onMoveNote, onTogglePin, onTrashNote, onRestoreNote, onPermanentDelete,
 }: SidebarProps) {
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  // One row menu at a time; the row it belongs to is carried with the coordinates so
+  // the menu keeps showing the right actions while the list re-sorts underneath it.
+  const [menu, setMenu] = useState<{ x: number; y: number; note: Note } | null>(null);
+
+  // Touch drag would fight the sidebar sheet's own drag-to-dismiss (App.tsx), and the
+  // menu path already covers touch. DESIGN.md §6.
+  const canDrag = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
   const [sort, setSort] = useState<SortOrder>(() => getItem<SortOrder>(SORT_KEY, 'newest'));
 
   const cycleSort = () => {
@@ -49,8 +74,13 @@ export function Sidebar({
   const SortIcon = current.icon;
 
   const source = view === 'notes' ? notes : trashedNotes;
+  // Trash is a flat view: a trashed note's group is not what the user is looking for there.
+  const filtered =
+    view === 'trash' || selectedGroup === 'all'
+      ? source
+      : source.filter(n => (n.groupId ?? null) === selectedGroup);
 
-  const sorted = [...source].sort((a, b) => {
+  const sorted = [...filtered].sort((a, b) => {
     // Pinned first, but only where pinning means anything
     if (view === 'notes') {
       if (a.pinned && !b.pinned) return -1;
@@ -66,8 +96,25 @@ export function Sidebar({
     <aside className="flex h-full w-72 flex-col overflow-hidden rounded-2xl border border-separator bg-surface shadow-e2">
       {/* One scroll container: the search row scrolls with the list rather than
           pinning, so there's no seam between a fixed strip and moving rows. */}
-      <div className="min-h-0 flex-1 overflow-y-auto pt-3">
-        <div className="flex items-center gap-1 px-3 pb-2">
+      {/* A vertical scroller has to say so on BOTH axes: CSS promotes the other axis
+          from `visible` to `auto` as soon as one axis scrolls, and IconButton's 44px
+          touch pad (`after:-inset-1`) reaches 4px past its own box — which was enough
+          to give this list a stray horizontal scrollbar. */}
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pt-3">
+        {view === 'notes' && (
+          <GroupStrip
+            groups={groups}
+            counts={groupCounts}
+            selectedId={selectedGroup}
+            onSelect={onSelectGroup}
+            onCreate={onCreateGroup}
+            onRename={onRenameGroup}
+            onDelete={onDeleteGroup}
+            dropTargetId={dropTargetId}
+          />
+        )}
+
+        <div className="flex items-center gap-1 px-3 pb-2 pt-2">
           {/* Search is the command palette now — this button just opens it */}
           <button
             onClick={onOpenSearch}
@@ -94,6 +141,10 @@ export function Sidebar({
             note={note}
             isActive={note.id === activeNoteId}
             onClick={() => onSelect(note.id)}
+            draggable={canDrag && view === 'notes'}
+            onDragHover={setDropTargetId}
+            onDragToGroup={groupId => onMoveNote(note.id, groupId)}
+            onContextMenu={(x, y) => setMenu({ x, y, note })}
           />
         ))}
       </div>
@@ -121,6 +172,18 @@ export function Sidebar({
           </button>
         ))}
       </div>
+      {menu && (
+        <NoteContextMenu
+          x={menu.x}
+          y={menu.y}
+          note={menu.note}
+          onTogglePin={onTogglePin}
+          onTrash={onTrashNote}
+          onRestore={onRestoreNote}
+          onPermanentDelete={onPermanentDelete}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </aside>
   );
 }

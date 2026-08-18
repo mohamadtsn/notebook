@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useNotes } from './hooks/useNotes';
-import { useDarkMode } from './hooks/useDarkMode';
+import { useGroups } from './hooks/useGroups';
+import { useSettings } from './hooks/useSettings';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
@@ -10,12 +11,14 @@ import { EmptyState } from './components/EmptyState';
 import { CommandPalette } from './components/CommandPalette';
 import { InstallPrompt } from './components/InstallPrompt';
 import { AuthDialog } from './components/AuthDialog';
+import { Settings } from './components/Settings';
 import { SyncStatus } from './components/SyncStatus';
 import { useAuth } from './hooks/useAuth';
 import { useSync } from './hooks/useSync';
 import { useSwUpdate } from './hooks/useSwUpdate';
 import { useToast } from './components/ui/toast-context';
 import { springDrag, easeDrawer } from './lib/motion';
+import type { GroupFilter } from './types/group';
 
 type View = 'notes' | 'trash';
 
@@ -27,15 +30,46 @@ export default function App() {
   const {
     notes, activeNote, activeNoteId, activeNotes, trashedNotes,
     createNote, updateNote, trashNote, restoreNote, permanentDelete,
-    togglePin, setColor, selectNote, applySync,
+    togglePin, setColor, setGroup, clearGroup, restoreGroups, selectNote, applySync,
   } = useNotes();
 
-  const { dark, toggle: toggleDark } = useDarkMode();
+  const {
+    groups, activeGroups, createGroup, renameGroup, deleteGroup, restoreGroup, applyGroupSync,
+  } = useGroups();
+
+  const [selectedGroup, setSelectedGroup] = useState<GroupFilter>('all');
+
+  /**
+   * «همه» is a filter, not a destination: creating a note there means «بدون گروه».
+   * Wrapped rather than passed directly, because `createNote` now takes an argument
+   * and an unwrapped `onClick` would hand it a MouseEvent as the group id.
+   */
+  const newNote = useCallback(
+    () => createNote(selectedGroup === 'all' ? null : selectedGroup),
+    [createNote, selectedGroup],
+  );
+
+  const {
+    settings, update: updateSettings, updateAi, applyRemote, resolvedDark,
+  } = useSettings();
+
+  /**
+   * The navbar/palette control is a toggle, so it only ever cycles the two explicit
+   * values — a toggle must not be able to land the user on `system` by accident.
+   */
+  const toggleDark = useCallback(
+    () => updateSettings({ theme: resolvedDark ? 'light' : 'dark' }),
+    [updateSettings, resolvedDark],
+  );
+
   const { toast } = useToast();
   useSwUpdate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Keyboard paths open the panel instantly; a pointer click gets the enter. DESIGN.md §5.
+  const [settingsInstant, setSettingsInstant] = useState(false);
   const [view, setView] = useState<View>('notes');
 
   const { token, email, signIn, signOut } = useAuth();
@@ -45,16 +79,22 @@ export default function App() {
     toast('نشست منقضی شد؛ دوباره وارد شوید');
   }, [signOut, toast]);
 
-  const { state: syncState, sync } = useSync({
+  const { state: syncState, settingsState, sync } = useSync({
     token,
     notes,
+    intervalMs: settings.syncIntervalMs,
+    settings,
+    applyRemoteSettings: applyRemote,
+    groups,
+    applyGroupSync,
     applySync,
     onUnauthorized: handleUnauthorized,
   });
 
   useKeyboardShortcuts({
-    onNewNote: createNote,
+    onNewNote: newNote,
     onOpenPalette: () => setPaletteOpen(true),
+    onOpenSettings: () => { setSettingsInstant(true); setSettingsOpen(true); },
     onDeselect: () => selectNote(null),
   });
 
@@ -83,7 +123,33 @@ export default function App() {
     if (confirm('این یادداشت برای همیشه حذف می‌شود. مطمئنید؟')) permanentDelete(id);
   }, [permanentDelete]);
 
+  /**
+   * Deleting a group never deletes its notes — they fall back to «بدون گروه».
+   * The previous assignments are captured BEFORE the write, because after it they
+   * are gone and the undo would have nothing to restore. DESIGN.md §6: undo, not confirm.
+   */
+  const handleDeleteGroup = useCallback((id: string) => {
+    const previous = clearGroup(id);
+    deleteGroup(id);
+    if (selectedGroup === id) setSelectedGroup('all');
+    toast('گروه حذف شد؛ یادداشت‌ها باقی ماندند', {
+      action: {
+        label: 'واگرد',
+        onClick: () => { restoreGroup(id); restoreGroups(previous); },
+      },
+    });
+  }, [clearGroup, deleteGroup, restoreGroup, restoreGroups, toast, selectedGroup]);
+
   const isTrash = !!activeNote?.deletedAt;
+
+  const groupCounts = useMemo(() => {
+    const counts = new Map<GroupFilter, number>([['all', activeNotes.length]]);
+    for (const n of activeNotes) {
+      const key = n.groupId ?? null;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [activeNotes]);
 
   const sidebar = (
     <Sidebar
@@ -94,6 +160,18 @@ export default function App() {
       onViewChange={handleViewChange}
       onSelect={handleSelect}
       onOpenSearch={() => setPaletteOpen(true)}
+      groups={activeGroups}
+      groupCounts={groupCounts}
+      selectedGroup={selectedGroup}
+      onSelectGroup={setSelectedGroup}
+      onCreateGroup={createGroup}
+      onRenameGroup={renameGroup}
+      onDeleteGroup={handleDeleteGroup}
+      onMoveNote={setGroup}
+      onTogglePin={togglePin}
+      onTrashNote={handleTrash}
+      onRestoreNote={restoreNote}
+      onPermanentDelete={handlePermanentDelete}
     />
   );
 
@@ -123,9 +201,14 @@ export default function App() {
               onPermanentDelete={handlePermanentDelete}
               onTogglePin={togglePin}
               onSetColor={setColor}
+              groups={activeGroups}
+              onSetGroup={setGroup}
+              settings={settings}
+              token={token}
+              onOpenSettings={() => { setSettingsInstant(false); setSettingsOpen(true); }}
             />
           ) : (
-            <EmptyState onNewNote={view === 'notes' ? createNote : undefined} />
+            <EmptyState onNewNote={view === 'notes' ? newNote : undefined} />
           )}
         </main>
       </div>
@@ -168,10 +251,11 @@ export default function App() {
       </AnimatePresence>
 
       <Navbar
-        onNewNote={createNote}
+        onNewNote={newNote}
         onToggleSidebar={() => setSidebarOpen(o => !o)}
-        dark={dark}
+        dark={resolvedDark}
         onToggleDark={toggleDark}
+        onOpenSettings={() => { setSettingsInstant(false); setSettingsOpen(true); }}
       >
         <SyncStatus
           state={syncState}
@@ -187,16 +271,39 @@ export default function App() {
         <CommandPalette
           onClose={() => setPaletteOpen(false)}
           notes={notes.filter(n => !n.deletedAt)}
-          dark={dark}
+          dark={resolvedDark}
           onSelectNote={handleSelect}
-          onNewNote={createNote}
+          onNewNote={newNote}
           onToggleDark={toggleDark}
           onOpenTrash={() => handleViewChange('trash')}
+          onOpenSettings={() => { setSettingsInstant(true); setSettingsOpen(true); }}
+          groups={activeGroups}
+          activeNote={activeNote}
+          onMoveToGroup={groupId => { if (activeNote) setGroup(activeNote.id, groupId); }}
         />
       )}
 
       <AnimatePresence>
         {authOpen && <AuthDialog onClose={() => setAuthOpen(false)} onSubmit={signIn} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {settingsOpen && (
+          <Settings
+            settings={settings}
+            onUpdate={updateSettings}
+            onUpdateAi={updateAi}
+            email={email}
+            syncState={syncState}
+            settingsState={settingsState}
+            pending={notes.filter(n => n.dirty).length}
+            onSync={() => void sync()}
+            onSignIn={() => { setSettingsOpen(false); setAuthOpen(true); }}
+            onSignOut={signOut}
+            onClose={() => setSettingsOpen(false)}
+            instant={settingsInstant}
+          />
+        )}
       </AnimatePresence>
 
       <InstallPrompt />

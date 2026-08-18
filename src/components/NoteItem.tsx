@@ -1,4 +1,6 @@
+import { motion } from 'motion/react';
 import { Pin } from 'lucide-react';
+import { springDrag } from '../lib/motion';
 import type { Note } from '../types/note';
 import { noteColorVar } from '../types/note';
 import { cx } from './ui/cx';
@@ -7,6 +9,12 @@ interface NoteItemProps {
   note: Note;
   isActive: boolean;
   onClick: () => void;
+  /** Desktop only — see Sidebar. On touch this fights the sheet's drag-to-dismiss. */
+  draggable?: boolean;
+  onDragToGroup?: (groupId: string | null) => void;
+  onDragHover?: (groupId: string | null) => void;
+  /** Pointer coordinates. Shift+right-click is already filtered out by the row. */
+  onContextMenu?: (x: number, y: number) => void;
 }
 
 function formatTime(ms: number): string {
@@ -21,7 +29,9 @@ function formatTime(ms: number): string {
   return new Date(ms).toLocaleDateString('fa-IR');
 }
 
-export function NoteItem({ note, isActive, onClick }: NoteItemProps) {
+export function NoteItem({
+  note, isActive, onClick, draggable = false, onDragToGroup, onDragHover, onContextMenu,
+}: NoteItemProps) {
   const title = note.title.trim() || 'یادداشت بدون عنوان';
   const preview = note.body.trim();
 
@@ -29,7 +39,34 @@ export function NoteItem({ note, isActive, onClick }: NoteItemProps) {
   const labelColor = note.color ? noteColorVar(note.color) : null;
   const barColor = isActive ? 'var(--accent)' : labelColor;
 
+  // The strip's rows carry data-group-id; «بدون گروه» carries the sentinel.
+  const groupUnderPointer = (x: number, y: number): string | null => {
+    const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-group-id]');
+    return el?.dataset.groupId ?? null;
+  };
+
   return (
+    <motion.div
+      drag={draggable}
+      dragSnapToOrigin
+      dragMomentum={false}
+      // Release outside a target springs home — DESIGN.md §6 drop affordance.
+      dragTransition={{ bounceStiffness: 400, bounceDamping: 40 }}
+      transition={springDrag}
+      onDrag={(_, info) => onDragHover?.(groupUnderPointer(info.point.x, info.point.y))}
+      onDragEnd={(_, info) => {
+        const target = groupUnderPointer(info.point.x, info.point.y);
+        onDragHover?.(null);
+        if (target !== null) onDragToGroup?.(target === '__none__' ? null : target);
+      }}
+      // Shift passes through to the browser's own menu, same rule as the editor.
+      onContextMenu={e => {
+        if (!onContextMenu || e.shiftKey) return;
+        e.preventDefault();
+        onContextMenu(e.clientX, e.clientY);
+      }}
+      className="relative"
+    >
     <button
       onClick={onClick}
       aria-current={isActive ? 'true' : undefined}
@@ -55,5 +92,6 @@ export function NoteItem({ note, isActive, onClick }: NoteItemProps) {
       )}
       <p className="mt-1.5 text-xs text-muted">{formatTime(note.updatedAt)}</p>
     </button>
+    </motion.div>
   );
 }

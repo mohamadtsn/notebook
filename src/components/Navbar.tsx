@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Menu, Moon, NotebookPen, Plus, Sun } from 'lucide-react';
+import { Menu, Moon, NotebookPen, Plus, Settings2, Sun } from 'lucide-react';
 import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 
@@ -8,11 +8,14 @@ interface NavbarProps {
   onToggleSidebar: () => void;
   dark: boolean;
   onToggleDark: () => void;
+  onOpenSettings: () => void;
   /** Slot for the sync status, kept out of the navbar's own concerns. */
   children?: ReactNode;
 }
 
-export function Navbar({ onNewNote, onToggleSidebar, dark, onToggleDark, children }: NavbarProps) {
+export function Navbar({
+  onNewNote, onToggleSidebar, dark, onToggleDark, onOpenSettings, children,
+}: NavbarProps) {
   return (
     // Floating, not docked: it hovers over the cards below so their text passes
     // under it. `pointer-events-none` on the bar itself would kill the buttons,
@@ -38,11 +41,17 @@ export function Navbar({ onNewNote, onToggleSidebar, dark, onToggleDark, childre
       <div className="flex items-center gap-1">
         {children}
 
+        <IconButton label="تنظیمات" onClick={onOpenSettings}>
+          <Settings2 size={17} />
+        </IconButton>
+
         <IconButton label={dark ? 'حالت روشن' : 'حالت تاریک'} onClick={onToggleDark}>
           {dark ? <Sun size={17} /> : <Moon size={17} />}
         </IconButton>
 
-        <Button variant="primary" size="sm" onClick={onNewNote}>
+        {/* The label is the only accessible name below `sm`, where it is visually
+            hidden — without aria-label this is an unnamed icon button. DESIGN.md §8. */}
+        <Button variant="primary" size="sm" onClick={onNewNote} aria-label="یادداشت جدید">
           <Plus size={16} />
           <span className="hidden sm:inline">یادداشت جدید</span>
         </Button>

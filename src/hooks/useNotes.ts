@@ -4,6 +4,7 @@ import type { Note, NoteColor, WireNote } from '../types/note';
 import { migrateNotes } from '../types/note';
 import { getItem, setItem } from '../utils/storage';
 import { clearPushed, mergeNotes } from '../utils/merge';
+import { dropHistory } from './useHistory';
 
 const STORAGE_KEY = 'notebook_notes';
 
@@ -26,7 +27,7 @@ export function useNotes() {
   const activeNotes  = notes.filter(n => !n.deletedAt);
   const trashedNotes = notes.filter(n => !!n.deletedAt);
 
-  const createNote = useCallback(() => {
+  const createNote = useCallback((groupId: string | null = null) => {
     const note: Note = {
       id: uuidv4(),
       title: '',
@@ -36,6 +37,7 @@ export function useNotes() {
       color: null,
       pinned: false,
       deletedAt: null,
+      groupId,
       dirty: true,
       syncedAt: null,
     };
@@ -76,6 +78,8 @@ export function useNotes() {
   }, []);
 
   const permanentDelete = useCallback((id: string) => {
+    // The note is gone for good, so its undo history has nothing left to describe.
+    dropHistory(id);
     setNotes(prev => {
       const updated = prev.filter(n => n.id !== id);
       persist(updated);
@@ -96,6 +100,45 @@ export function useNotes() {
   const setColor = useCallback((id: string, color: NoteColor | null) => {
     setNotes(prev => {
       const updated = patchNote(prev, id, { color });
+      persist(updated);
+      return updated;
+    });
+  }, []);
+
+  const setGroup = useCallback((id: string, groupId: string | null) => {
+    setNotes(prev => {
+      const updated = patchNote(prev, id, { groupId });
+      persist(updated);
+      return updated;
+    });
+  }, []);
+
+  /**
+   * Deleting a group never deletes its notes — they fall back to «بدون گروه».
+   * Returns the previous assignments so the undo toast can put them back; capturing
+   * them after the write would be too late. Reading the render-time `notes` array
+   * instead would miss a write that landed in the same tick, which is why this
+   * writes to a closure variable from inside the updater.
+   */
+  const clearGroup = useCallback((groupId: string): { id: string; groupId: string | null }[] => {
+    let previous: { id: string; groupId: string | null }[] = [];
+    setNotes(prev => {
+      previous = prev.filter(n => n.groupId === groupId).map(n => ({ id: n.id, groupId }));
+      const updated = prev.map(n =>
+        n.groupId === groupId ? { ...n, groupId: null, updatedAt: Date.now(), dirty: true } : n
+      );
+      persist(updated);
+      return updated;
+    });
+    return previous;
+  }, []);
+
+  const restoreGroups = useCallback((assignments: { id: string; groupId: string | null }[]) => {
+    setNotes(prev => {
+      const map = new Map(assignments.map(a => [a.id, a.groupId]));
+      const updated = prev.map(n =>
+        map.has(n.id) ? { ...n, groupId: map.get(n.id)!, updatedAt: Date.now(), dirty: true } : n
+      );
       persist(updated);
       return updated;
     });
@@ -135,6 +178,9 @@ export function useNotes() {
     permanentDelete,
     togglePin,
     setColor,
+    setGroup,
+    clearGroup,
+    restoreGroups,
     selectNote,
     applySync,
   };

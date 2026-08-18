@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { api } from '../utils/api';
 import { getItem, setItem } from '../utils/storage';
+import { clearAiCache } from '../utils/aiCache';
 
 const TOKEN_KEY = 'notebook_token';
 const EMAIL_KEY = 'notebook_email';
@@ -26,6 +27,11 @@ export function useAuth() {
 
   /** Signing out is not a data-loss event: the token goes, every local note stays. */
   const signOut = useCallback(() => {
+    // Note the asymmetry, and keep it: signing out KEEPS every local note (a stated
+    // product promise) but drops the AI cache. The cache is derived data that may hold
+    // text from this user's notes, and it has no value to the next account on a shared
+    // device.
+    clearAiCache();
     setItem(TOKEN_KEY, null);
     setItem(EMAIL_KEY, null);
     setItem(LAST_PULL_KEY, 0);

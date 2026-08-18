@@ -3,12 +3,16 @@ import type { Note, NoteColor } from '../types/note';
 import { NOTE_COLORS, NOTE_COLOR_LABEL, noteColorVar } from '../types/note';
 import { IconButton } from './ui/IconButton';
 import { Popover, PopoverItem } from './ui/Popover';
+import { MoveToGroup } from './MoveToGroup';
+import type { Group } from '../types/group';
 import { SegmentedControl } from './ui/SegmentedControl';
 
 export type EditorMode = 'write' | 'preview';
 
 interface EditorToolbarProps {
   note: Note;
+  groups: Group[];
+  onMove: (groupId: string | null) => void;
   isTrash: boolean;
   mode: EditorMode;
   onModeChange: (mode: EditorMode) => void;
@@ -30,7 +34,7 @@ const MODES: { value: EditorMode; label: string }[] = [
  * This is what used to live in the editor footer.
  */
 export function EditorToolbar({
-  note, isTrash, mode, onModeChange,
+  note, groups, onMove, isTrash, mode, onModeChange,
   onTogglePin, onSetColor, onExport, onTrash, onRestore, onPermanentDelete,
 }: EditorToolbarProps) {
   return (
@@ -100,6 +104,16 @@ export function EditorToolbar({
           >
             {({ close }) => (
               <>
+                {!isTrash && (
+                  <div className="mb-1 border-b border-separator pb-1">
+                    <p className="px-3 py-1 text-[.6875rem] text-muted">انتقال به گروه</p>
+                    <MoveToGroup
+                      groups={groups}
+                      currentGroupId={note.groupId}
+                      onMove={g => { onMove(g); close(); }}
+                    />
+                  </div>
+                )}
                 <PopoverItem onClick={() => { onExport('md'); close(); }}>
                   <Download size={14} /> دانلود .md
                 </PopoverItem>

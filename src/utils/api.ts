@@ -1,4 +1,6 @@
 import type { WireNote } from '../types/note';
+import type { WireSettings } from '../types/settings';
+import type { WireGroup } from '../types/group';
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
@@ -36,17 +38,31 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
 
-  push: (token: string, notes: WireNote[]) =>
-    request<{ serverTime: number; rejected: string[] }>(
+  push: (token: string, notes: WireNote[], groups: WireGroup[]) =>
+    request<{ serverTime: number; rejected: string[]; rejectedGroups: string[] }>(
       '/sync/push',
-      { method: 'POST', body: JSON.stringify({ notes }) },
+      { method: 'POST', body: JSON.stringify({ notes, groups }) },
       token,
     ),
 
   pull: (token: string, since: number) =>
-    request<{ notes: WireNote[]; serverTime: number }>(
+    request<{ notes: WireNote[]; groups: WireGroup[]; serverTime: number }>(
       `/sync/pull?since=${since}`,
       { method: 'GET' },
+      token,
+    ),
+
+  getSettings: (token: string) =>
+    request<{ settings: WireSettings | null; updatedAt: number }>(
+      '/settings',
+      { method: 'GET' },
+      token,
+    ),
+
+  putSettings: (token: string, settings: WireSettings, updatedAt: number) =>
+    request<{ settings: WireSettings; updatedAt: number }>(
+      '/settings',
+      { method: 'PUT', body: JSON.stringify({ settings, updatedAt }) },
       token,
     ),
 };

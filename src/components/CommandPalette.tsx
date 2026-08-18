@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { FileText, Moon, Plus, Sun, Trash2 } from 'lucide-react';
+import { FileText, Folder, FolderOpen, Moon, Plus, Settings2, Sun, Trash2 } from 'lucide-react';
+import type { Group } from '../types/group';
 import type { Note } from '../types/note';
 import { cx } from './ui/cx';
 
@@ -9,6 +10,8 @@ interface Command {
   hint?: string;
   icon: ReactNode;
   run: () => void;
+  /** Actions that open a second level inside the palette rather than dismissing it. */
+  keepOpen?: boolean;
 }
 
 interface CommandPaletteProps {
@@ -19,6 +22,11 @@ interface CommandPaletteProps {
   onNewNote: () => void;
   onToggleDark: () => void;
   onOpenTrash: () => void;
+  onOpenSettings: () => void;
+  groups: Group[];
+  /** null while no note is open — the move action is hidden in that case. */
+  activeNote: Note | null;
+  onMoveToGroup: (groupId: string | null) => void;
 }
 
 function matches(haystack: string, needle: string): boolean {
@@ -33,13 +41,41 @@ function matches(haystack: string, needle: string): boolean {
  * without a reset effect.
  */
 export function CommandPalette({
-  onClose, notes, dark, onSelectNote, onNewNote, onToggleDark, onOpenTrash,
+  onClose, notes, dark, onSelectNote, onNewNote, onToggleDark, onOpenTrash, onOpenSettings,
+  groups, activeNote, onMoveToGroup,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
+  // Second level, same list and same keys — not a different interaction model.
+  const [picking, setPicking] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   const commands = useMemo<Command[]>(() => {
+    if (picking) {
+      // «بدون گروه» is filtered by the query like any other row: leaving it pinned
+      // meant typing a group's name still left "no group" under the cursor, so Enter
+      // moved the note out of every group instead of into the one just typed.
+      const none: Command[] = !query || matches('بدون گروه', query)
+        ? [{
+            id: 'move-none',
+            label: 'بدون گروه',
+            icon: <FolderOpen size={15} />,
+            run: () => onMoveToGroup(null),
+          }]
+        : [];
+      return [
+        ...none,
+        ...groups
+          .filter(g => !query || matches(g.name, query))
+          .map(g => ({
+            id: `move-${g.id}`,
+            label: g.name,
+            icon: <Folder size={15} />,
+            run: () => onMoveToGroup(g.id),
+          })),
+      ];
+    }
+
     const actions: Command[] = [
       { id: 'new', label: 'یادداشت جدید', hint: 'Ctrl+N', icon: <Plus size={15} />, run: onNewNote },
       {
@@ -49,6 +85,16 @@ export function CommandPalette({
         run: onToggleDark,
       },
       { id: 'trash', label: 'سطل زباله', icon: <Trash2 size={15} />, run: onOpenTrash },
+      { id: 'settings', label: 'تنظیمات', hint: 'Ctrl+,', icon: <Settings2 size={15} />, run: onOpenSettings },
+      ...(activeNote
+        ? [{
+            id: 'move',
+            label: 'انتقال به گروه…',
+            icon: <Folder size={15} />,
+            run: () => { setPicking(true); setQuery(''); setCursor(0); },
+            keepOpen: true,
+          }]
+        : []),
     ];
 
     const noteResults: Command[] = notes
@@ -67,7 +113,10 @@ export function CommandPalette({
       : actions;
 
     return [...noteResults, ...filteredActions];
-  }, [notes, query, dark, onNewNote, onToggleDark, onOpenTrash, onSelectNote]);
+  }, [
+    notes, query, dark, onNewNote, onToggleDark, onOpenTrash, onOpenSettings, onSelectNote,
+    picking, groups, activeNote, onMoveToGroup,
+  ]);
 
   // Keep the highlighted row in view when arrowing past the fold
   useEffect(() => {
@@ -77,7 +126,7 @@ export function CommandPalette({
   const run = (cmd: Command | undefined) => {
     if (!cmd) return;
     cmd.run();
-    onClose();
+    if (!cmd.keepOpen) onClose();
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -92,7 +141,9 @@ export function CommandPalette({
       run(commands[cursor]);
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      onClose();
+      // Escape backs out of the group picker first, then closes the palette.
+      if (picking) { setPicking(false); setQuery(''); setCursor(0); }
+      else onClose();
     }
   };
 
@@ -112,12 +163,12 @@ export function CommandPalette({
           autoFocus
           value={query}
           onChange={e => { setQuery(e.target.value); setCursor(0); }}
-          placeholder="جستجو در یادداشت‌ها یا اجرای یک دستور..."
-          aria-label="جستجو"
+          placeholder={picking ? 'انتقال به کدام گروه؟' : 'جستجو در یادداشت‌ها یا اجرای یک دستور...'}
+          aria-label={picking ? 'انتخاب گروه' : 'جستجو'}
           className="w-full border-b border-separator bg-transparent px-4 py-3.5 text-sm text-ink outline-none placeholder:text-muted"
         />
 
-        <div ref={listRef} role="listbox" className="max-h-80 overflow-y-auto p-1.5">
+        <div ref={listRef} role="listbox" className="max-h-80 overflow-y-auto overflow-x-hidden p-1.5">
           {commands.length === 0 && (
             <p className="px-3 py-6 text-center text-sm text-muted">چیزی پیدا نشد</p>
           )}
