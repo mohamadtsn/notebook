@@ -7,6 +7,8 @@ export interface Note {
   color: NoteColor | null;
   pinned: boolean;
   deletedAt: number | null;
+  /** `null` is the real, always-present «بدون گروه» bucket — not an error state. */
+  groupId: string | null;
   /** Local-only sync bookkeeping. Stripped before a note goes to the server. */
   dirty: boolean;
   syncedAt: number | null;
@@ -30,6 +32,7 @@ export function toWire(n: Note): WireNote {
     color: n.color,
     pinned: n.pinned,
     deletedAt: n.deletedAt,
+    groupId: n.groupId,
   };
 }
 
@@ -69,6 +72,7 @@ export function migrateNotes(notes: Note[]): Note[] {
   return notes.map(n => ({
     ...n,
     color: migrateColor(n.color),
+    groupId: n.groupId ?? null,
     // Notes written before sync existed have never been pushed, so they start dirty.
     dirty: n.dirty ?? true,
     syncedAt: n.syncedAt ?? null,
