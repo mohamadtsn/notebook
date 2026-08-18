@@ -24,8 +24,6 @@ cp .env.example .env && docker compose up -d --build    # repo root; needs a rea
 ## Reference docs (read before UI or feature work)
 
 - **`DESIGN.md` — the design system. Any change to visuals, layout, or motion must come from a token or rule in it.** Colors, glass materials, type scale, motion tokens, component specs, RTL rules, the accessibility floor, and the anti-pattern table all live there. If a decision isn't covered, add it to `DESIGN.md` first, then build.
-- **`PLAN-V2.md` — the current roadmap**: token rewire → UI redesign → PWA → Fastify/SQLite backend → offline-first sync → remaining features. Phased with a review checkpoint after each phase.
-- `PLAN.md` — the v1 spec, kept for history. Superseded by `PLAN-V2.md`.
 
 ## Architecture
 
@@ -41,12 +39,29 @@ Single-page, offline-only notebook. React 19 + TypeScript + Vite + Tailwind v4. 
 
 **RTL/LTR**: this is a Persian-first app. `detectDirection` (`src/utils/direction.ts`) scans for the first strong character and **defaults to `rtl`** when the text has none. Title and body each get their own `dir` via `useTextDirection` — the native `dir="auto"` was rejected because it only inspects the first strong char of the whole value. User-facing strings in components are Persian; match that when adding UI text.
 
-**Markdown**: `src/utils/markdown.ts` is a hand-rolled line-based renderer (no dependency) whose output goes into `dangerouslySetInnerHTML` in the editor preview — so this file is an XSS surface and has two invariants:
+**Markdown**: `src/utils/markdown.ts` is `markdown-it` + `DOMPurify`, and its output goes into
+`dangerouslySetInnerHTML` in the editor preview — so this file is an XSS surface with two layers and
+**both must stay**:
 
-- **Escape first, then apply rules.** `renderInline` calls `escapeHtml` on the whole line before any `.replace()`, so no user markup can reach the DOM. A new construct added *before* the escape, or a `replace` that re-inserts raw input, reopens the hole. Fenced code blocks escape on their own path.
-- **URLs go through `safeUrl`** — an allowlist (`https?://`, `mailto:`, `/`, `#`, `.`), with protocol-relative `//host` rejected; everything else becomes `href="#"`.
+- **`html: false`** on the markdown-it instance, so raw HTML in a note is escaped by the parser and
+  never parsed.
+- **DOMPurify on the result**, with an explicit `ALLOWED_TAGS`/`ALLOWED_ATTR` allowlist. This is
+  what actually strips an `onerror=` or a `javascript:` href if the parser ever lets one through.
+  The `target`/`rel` on external links is set in an `afterSanitizeAttributes` hook, because
+  DOMPurify drops `target` on its own pass.
 
-Lines over `MAX_INLINE` (10k chars) skip inline formatting and render as escaped plain text: the lazy quantifiers backtrack badly and the preview re-renders while typing. `src/utils/checks.ts` asserts all of this — run `npm run check` after any edit here. Images (`![]()`) are deliberately unsupported; adding them means handling `onerror`.
+Images (`![]()`) are deliberately disabled: they need `onerror` handling, and a previewed note must
+not be able to call a third-party host. `src/utils/checks.ts` asserts all of this — it installs a
+jsdom window so the assertions run the pipeline that actually ships. Run `npm run check` after any
+edit here.
+
+(This replaced a hand-rolled line-based renderer. Do not reintroduce one — the escape-first ordering
+it depended on was a standing footgun, and it could not render tables, blockquotes or nested lists.)
+
+**Editor undo**: the body `<textarea>` is `hidden` in preview mode, never unmounted — the browser's
+undo stack belongs to the element, so unmounting it threw away every `Ctrl+Z`. For the same reason,
+programmatic edits (the context menu's cut/paste) go through `document.execCommand('insertText')`
+rather than `setBody`: assigning `value` wipes the stack.
 
 ## Sync (optional, client side)
 
@@ -68,6 +83,38 @@ server rejects unknown properties; add new local-only fields there, not by sprea
 
 `src/utils/checks.ts` covers the merge rules; run `npm run check` after touching any of it.
 
+## AI (optional, both sides)
+
+`src/utils/ai.ts` has one `callAi` entry point behind two transports: **proxy** (needs an account;
+the key lives in the server's env) and **direct** (no account; the user's own OpenAI-compatible
+endpoint, key stored on the device only). `buildMessages` is shared by both, because the cache key
+does not record which transport produced a result.
+
+- **`ai.apiKey` is never synced.** `toWireSettings` in `types/settings.ts` omits it structurally,
+  not by deletion. A provider key is a device credential, not a preference.
+- **The server accepts no base URL, model, or key from the client.** `providerFromEnv()` reads all
+  three from `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL`; a client-supplied base URL would make
+  `POST /ai/complete` an SSRF gadget. The prompt is built server-side too — `server/src/ai.ts`
+  deliberately duplicates `buildMessages` rather than accepting messages.
+- With those env vars unset the route answers **503**, not 500, so the UI can say "not configured"
+  instead of showing a server error for something that is not broken. Quota is per user per day
+  (`ai_usage` table, `AI_DAILY_LIMIT`) and is counted **before** the provider call, so a timeout is
+  not a free retry loop.
+- `src/utils/aiCache.ts` is an LRU in localStorage keyed by SHA-256 of
+  `task + model + targetLang + text` (NUL-joined, so field boundaries are unambiguous). Capped at
+  50 entries / 256KB — it shares one budget with the notes. `AiResult` fires **once per mount**
+  (StrictMode double-invokes effects, and the second call is real money).
+- Sign-out **clears the cache but keeps every local note**. Cache is derived data; notes are a
+  product promise.
+
+## Editor history
+
+`src/utils/history.ts` + `src/hooks/useHistory.ts` own undo/redo, and the native `Ctrl+Z` is
+intercepted in `Editor.tsx` so the two stacks cannot diverge. The store is module-scope and
+persisted under `notebook_history`, because the editor remounts on every note switch (`key={id}`
+in `App`) — history in component state would die there. Steps coalesce inside 700ms, cap at 100 per
+note, and whole notes are evicted (never truncated) at 512KB.
+
 ## Backend (`server/`)
 
 Fastify 5 + SQLite, storage only — no business logic beyond sync. **No build step**: Node 24 strips
@@ -87,6 +134,20 @@ route boundary; keep new fields there too.
 The SQLite file lives on a **host bind mount** (`./data`, gitignored), deliberately not a docker
 volume — the user wants a file no docker command can wipe. Compose runs the container as
 `${UID}:${GID}` to keep it host-owned; don't switch it back to a named volume.
+
+## Floating layers
+
+`ui/ContextMenu.tsx` is the one pointer/anchor-positioned surface: `position: fixed`, clamped to the
+viewport, **portalled to `document.body`**. The portal is not optional — `fixed` resolves against the
+nearest transformed ancestor, and every panel these menus open over is motion-animated, so rendering
+in place re-bases the clamped coordinates onto the panel. `ui/Select.tsx`, the editor menu, the note
+row menu and the AI popover all sit on it. `ui/Popover.tsx` stays `absolute` and is for triggers that
+are not inside a scroll container.
+
+**A vertical scroller must declare both axes.** CSS promotes the other axis from `visible` to `auto`
+as soon as one scrolls, and `IconButton`'s 44px touch pad (`after:-inset-1`) reaches 4px outside its
+own box — which is how the note list grew a stray horizontal scrollbar. Every `overflow-y-auto` in
+`src/components` also carries `overflow-x-hidden`.
 
 ## Styling
 

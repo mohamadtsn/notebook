@@ -128,6 +128,20 @@ VITE_API_URL=/api
 `VITE_API_URL=/api` makes the browser call the same origin; Nginx strips the `/api` prefix before
 forwarding. **It is read at build time**, so changing it means rebuilding the frontend.
 
+The AI proxy is optional and off unless all three of its variables are set:
+
+```dotenv
+AI_BASE_URL=https://api.openai.com/v1
+AI_API_KEY=<provider key>
+AI_MODEL=gpt-4o-mini
+AI_DAILY_LIMIT=300
+```
+
+With them unset, `/ai/complete` answers `503` and the app says so instead of failing — users can
+still use «مستقیم» mode, where their own key stays in their own browser and is never synced. The
+key, the model and the base URL are **only** ever read from this file: the endpoint takes none of
+them from the client, because a client-supplied base URL would turn the server into an SSRF proxy.
+
 ### 2. Build the frontend
 
 Create `./dist` yourself first. Both bind-mounted directories follow the same rule: if Docker has to

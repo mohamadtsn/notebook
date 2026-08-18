@@ -216,11 +216,91 @@ Variants: `primary` (accent fill), `ghost` (transparent, `--accent-soft` on hove
 
 **Note card** — 3px inline-start label bar, title + 2-line preview + timestamp. Active row: `--accent-soft` background + `--ink` title. Hover only under `(hover: hover)`.
 
+**Group row** — a compact row in the sidebar's group strip: the group's 3px inline-start colour bar
+(the same treatment the note card uses — never a filled background), name, and a `--muted` count.
+Selected row: `--accent-soft` fill + `--ink` name, matching the note card's active state so
+"selected" means one thing in this app. Height 36px, hit area ≥44px via padding.
+
+**Group strip** — sits above the note list **inside the sidebar's single scroll container** (§2 —
+one scroll container per region; a pinned strip over a scrolling list creates a seam). «همه» is
+pinned first and is the default selection. A `+` row at the end opens an inline, already-focused
+text input — never a dialog for a one-field create.
+
+**Drop affordance (note → group)** — while a note row is dragged, the group row under the pointer
+takes the `--accent-soft` fill and its colour bar goes to `--accent`. No scale, no shadow, no
+outline: the fill is the same signal used for "active", and reusing it is what makes the drop
+target legible without new vocabulary. Release outside a target springs the row home with
+`springDrag`. Desktop only, gated on `@media (hover: hover) and (pointer: fine)` — on touch the
+gesture collides with the sidebar sheet's own drag-to-dismiss.
+
 **Toolbar (editor)** — glass `panel` pill floating at the top-inline-end of the editor. Holds the 3–4 frequent actions; everything else lives behind `…`.
 
 **Popover / menu** — solid `--surface` + `--e-2`, not glass. Its trigger usually sits inside a glass surface (the toolbar), and glass-over-glass is banned; small dense text needs the opaque backing anyway. Scales from the trigger edge.
 
+**Select** — the project's own control, never a native `<select>`: the OS widget ignores every
+token here (font, radius, popup surface) and renders a light dropdown on a dark page. Trigger is a
+`--fill` field with a `--separator` border, `min-height: 44px` (§4), the current value plus a
+chevron that rotates 180° on open. The list is a **Context menu** surface anchored under the
+trigger's inline-end edge and matching its width, with a `--accent` check on the current row.
+It is `position: fixed` **and portalled to `<body>`** — every panel a select appears in is both a
+scroll container (which clipped an absolutely-positioned list) and motion-animated, and a transform
+makes an ancestor the containing block for `fixed`, which re-based the coordinates onto the panel.
+
+**Context menu** — same material as **Popover / menu** (solid `--surface` + `--e-2`, never glass:
+it opens over the editor sheet and dense small text needs opaque backing). Anchored to the pointer
+coordinates, scaling from the corner nearest the pointer, and flipped along either axis when it
+would overflow the viewport. Opened by `contextmenu` inside the editor, and by `Shift+F10` or the
+Menu key anchored to the caret — **a menu reachable only by right-click is not a keyboard path**
+(§8). Closes on `Esc`, on a click outside, and on selecting an item; `Esc` returns focus to the
+text. Arrow keys move between items; `Home`/`End` jump to the ends. Item rows reuse `PopoverItem`.
+Grouped items get a `--separator` hairline between groups, never a heading per group.
+
+**AI result popover** — same material as **Popover / menu** (solid `--surface` + `--e-2`).
+Anchored where the context menu was, `max-width: 28rem`, the result in its own scroll container at
+`max-height: 40vh` with the note body's type scale and its own `dir` from `useTextDirection` — a
+translation into a different script must not inherit the source's direction. Actions, in this
+order: **جایگزین کن** (primary), **کپی** (ghost), **دوباره تولید کن** (ghost), **لغو** (ghost).
+
+The result **never** replaces the text on its own; replacement is always an explicit press, and it
+goes through the editor's ordinary update path, so it lands in the undo history like any other edit.
+
+Five states, all designed rather than improvised:
+- *loading* — a `--muted` caption, no spinner animation over 300ms and no skeleton; the request is
+  the wait, not the UI.
+- *cache hit* — the result plus a `--muted` «از حافظهٔ محلی» caption. Never hidden: a user who
+  expects fresh output must be able to see why it was instant, and reach «دوباره تولید کن».
+- *not configured* — a sentence and a button that opens the settings AI section directly.
+- *offline / provider error / rate limited* — one plain sentence each, plus «دوباره تلاش کن».
+  Never a raw status code or stack trace.
+- *empty selection* — the AI rows are not rendered at all in the context menu.
+
+**Native menu escape hatch** — `Shift`+right-click passes straight through to the browser's own
+menu. Persian spellcheck suggestions live there, and silently replacing them would be a
+regression. The app menu states this at its foot in `--muted` caption text. The app menu also
+stands down entirely where its actions cannot apply: preview mode and a trashed note give the
+browser menu.
+
 **Command palette** — glass `overlay`, centered, `⌘K`. Searches notes and exposes actions. Opens instantly, no animation.
+
+**Settings overlay** — glass `overlay` (§2) over the mandatory scrim, centered, `--r-xl`,
+`max-width: 34rem`, `max-height: min(80vh, 44rem)` with the section list as the single scroll
+container (§2 "one scroll container per region"). Opened by `⌘,`, the navbar gear, or the command
+palette. Keyboard paths open it **instantly** (§5 — never animate a keyboard-triggered action); a
+pointer click gets the standard `popIn` enter from `src/lib/motion.ts`. `Esc` and a scrim click
+close it. On open, focus moves to the first control **in the section list** — never the close
+button, which would offer leaving as the panel's first statement — and returns to the trigger on
+close. Sections are
+separated by a `--separator` hairline and a section heading at the §3 "Section heading" size — never
+tabs, four sections do not earn tab chrome. It sits over the canvas and its scrim, never over the
+navbar's glass: glass over solid, per §2.
+
+**Settings row (Field)** — a label plus an optional one-line description on the inline-start, its
+control on the inline-end, `min-height: 44px` (§4 touch floor, not taste), `--separator` hairline
+between rows but not after the last. The description is `--muted` at caption size. A row whose
+control needs an account shows the sign-in CTA in the control slot; it is **never** rendered
+disabled-and-greyed — the row explains what an account adds (PRODUCT.md principle 1). Destructive
+rows use the `danger` Button variant, not a red row background. Rows that report live state
+(sync status, queue depth) carry `aria-live="polite"`, per §8.
 
 **Toast** — bottom-center (bottom-inline-start on desktop), glass `panel`, enters/exits from the bottom, swipe-to-dismiss with velocity threshold. Destructive actions use an **undo toast**, not a confirm dialog.
 
