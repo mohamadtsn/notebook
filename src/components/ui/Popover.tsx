@@ -27,14 +27,19 @@ export function Popover({ trigger, children, side = 'bottom', className }: Popov
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key !== 'Escape') return;
+      // The innermost open layer owns Escape. Capture phase plus stopPropagation is what
+      // makes that true: a Popover inside the settings panel would otherwise close both,
+      // because both listeners sit on `document` and the outer one registered first.
+      e.stopPropagation();
+      setOpen(false);
     };
 
     document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keydown', onKeyDown, true);
     return () => {
       document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keydown', onKeyDown, true);
     };
   }, [open]);
 
