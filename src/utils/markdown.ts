@@ -1,107 +1,55 @@
-const ESCAPE_MAP: Record<string, string> = {
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-};
-
-function escapeHtml(str: string): string {
-  return str.replace(/[&<>"']/g, c => ESCAPE_MAP[c]);
-}
+import MarkdownIt from 'markdown-it';
+import DOMPurify from 'dompurify';
 
 /**
- * Longest line that still gets inline formatting. The lazy quantifiers below backtrack
- * badly on pathological input (a line of thousands of `*`), and the preview re-renders
- * while the user types — so the failure mode is a frozen tab. No real note needs more.
+ * Markdown → HTML for the editor preview. The output goes into
+ * `dangerouslySetInnerHTML`, so this file is an XSS surface with two layers, and
+ * BOTH must stay:
+ *
+ * 1. `html: false` — raw HTML in the source is escaped by the parser, never parsed.
+ * 2. DOMPurify on the result — defence in depth, and the thing that actually strips
+ *    an `onerror=` or a `javascript:` href if the parser ever lets one through.
+ *
+ * `src/utils/checks.ts` asserts both; run `npm run check` after any edit here.
+ * Images are deliberately not allowed: they would need `onerror` handling and they
+ * let a note phone home to a third-party host just by being previewed.
  */
-const MAX_INLINE = 10_000;
+const md = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: true,        // a single newline is a line break — this is a notes app, not a blog
+  typographer: false,  // it rewrites quotes and dashes, which is wrong inside Persian text
+});
 
-/** Anything that isn't a plain navigable URL becomes inert — blocks javascript:/data: hrefs. */
-function safeUrl(url: string): string {
-  const trimmed = url.trim();
-  // `//host` reads as a local path but is protocol-relative: it leaves the origin.
-  if (trimmed.startsWith('//')) return '#';
-  return /^(https?:\/\/|mailto:|\/|#|\.)/i.test(trimmed) ? trimmed : '#';
-}
+md.disable(['image']);
 
 /**
- * Escapes FIRST, then applies inline rules, so no user-authored markup ever
- * reaches the DOM. The output is fed to dangerouslySetInnerHTML — every new
- * construct added here must keep the escape-before-replace order.
+ * External links open in a new tab and are severed from this document. This runs as a
+ * DOMPurify hook rather than a markdown-it renderer rule because DOMPurify drops
+ * `target` on its own pass — setting it here means it is applied last and survives.
  */
-function renderInline(text: string): string {
-  const escaped = escapeHtml(text);
-  // Past the ceiling the text is still shown — escaped and unformatted, never dropped.
-  if (escaped.length > MAX_INLINE) return escaped;
+DOMPurify.addHook('afterSanitizeAttributes', node => {
+  if (node.nodeName !== 'A') return;
+  const href = node.getAttribute('href') ?? '';
+  if (!/^(https?:)?\/\//i.test(href)) return;
+  node.setAttribute('target', '_blank');
+  node.setAttribute('rel', 'noopener noreferrer nofollow');
+});
 
-  return escaped
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/~~(.+?)~~/g, '<del>$1</del>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(
-      /\[(.+?)\]\((.+?)\)/g,
-      (_, label: string, url: string) =>
-        `<a href="${safeUrl(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`,
-    );
-}
+/** Everything the preview is allowed to contain. Anything else is stripped. */
+const ALLOWED_TAGS = [
+  'p', 'br', 'hr', 'strong', 'em', 'del', 's', 'code', 'pre', 'blockquote',
+  'ul', 'ol', 'li', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'table', 'thead', 'tbody', 'tr', 'th', 'td',
+];
 
 export function renderMarkdown(text: string): string {
-  const lines = text.split('\n');
-  const html: string[] = [];
-  let inCodeBlock = false;
-  let inList = false;
-  let listType: 'ul' | 'ol' = 'ul';
-
-  for (const line of lines) {
-    if (line.startsWith('```')) {
-      if (inCodeBlock) {
-        html.push('</code></pre>');
-        inCodeBlock = false;
-      } else {
-        if (inList) { html.push(`</${listType}>`); inList = false; }
-        html.push('<pre><code>');
-        inCodeBlock = true;
-      }
-      continue;
-    }
-    if (inCodeBlock) { html.push(escapeHtml(line)); continue; }
-
-    const h3 = line.match(/^### (.+)/);
-    const h2 = line.match(/^## (.+)/);
-    const h1 = line.match(/^# (.+)/);
-    if (h1 || h2 || h3) {
-      if (inList) { html.push(`</${listType}>`); inList = false; }
-      const level = h1 ? 1 : h2 ? 2 : 3;
-      html.push(`<h${level}>${renderInline((h1 ?? h2 ?? h3)![1])}</h${level}>`);
-      continue;
-    }
-
-    const ulMatch = line.match(/^[-*] (.+)/);
-    if (ulMatch) {
-      if (!inList || listType !== 'ul') {
-        if (inList) html.push(`</${listType}>`);
-        html.push('<ul>'); inList = true; listType = 'ul';
-      }
-      html.push(`<li>${renderInline(ulMatch[1])}</li>`);
-      continue;
-    }
-
-    const olMatch = line.match(/^\d+\. (.+)/);
-    if (olMatch) {
-      if (!inList || listType !== 'ol') {
-        if (inList) html.push(`</${listType}>`);
-        html.push('<ol>'); inList = true; listType = 'ol';
-      }
-      html.push(`<li>${renderInline(olMatch[1])}</li>`);
-      continue;
-    }
-
-    if (inList && line.trim() === '') { html.push(`</${listType}>`); inList = false; }
-    if (line.match(/^---+$/)) { html.push('<hr />'); continue; }
-    if (line.trim() === '') { html.push('<br />'); continue; }
-
-    html.push(`<p>${renderInline(line)}</p>`);
-  }
-
-  if (inList) html.push(`</${listType}>`);
-  if (inCodeBlock) html.push('</code></pre>');
-  return html.join('\n');
+  return DOMPurify.sanitize(md.render(text), {
+    ALLOWED_TAGS,
+    ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'align'],
+    // `//host` reads as a local path but is protocol-relative; it is a normal external
+    // link and is treated as one, not as same-origin.
+    ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|[/#.]|\/\/)/i,
+    FORBID_ATTR: ['style'],
+  });
 }

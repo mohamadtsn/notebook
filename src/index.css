@@ -219,3 +219,19 @@ button:not(:disabled) { cursor: pointer; }
   @apply my-2 overflow-x-auto rounded-md border border-separator bg-fill px-4 py-3;
 }
 .markdown-preview pre code { @apply bg-transparent p-0 text-sm; }
+/* markdown-it renders constructs the hand-rolled renderer never emitted. */
+.markdown-preview blockquote {
+  @apply my-2 border-s-2 border-separator ps-4 text-ink-soft;
+}
+.markdown-preview table {
+  @apply my-3 w-full border-collapse text-sm;
+}
+.markdown-preview th,
+.markdown-preview td {
+  @apply border border-separator px-3 py-1.5 text-start;
+}
+.markdown-preview th { @apply bg-fill font-semibold; }
+.markdown-preview em { @apply italic; }
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 { @apply mt-2 mb-1 font-semibold; }
