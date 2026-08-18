@@ -185,6 +185,19 @@ Add TLS with `sudo certbot --nginx -d yourdomain.com`; certbot rewrites the conf
 
 ### Deploying an update
 
+On the server, use the deployment script from the repository root:
+
+```bash
+./deploy/deploy.sh
+```
+
+It refuses a dirty working tree, updates the checked-out branch with a fast-forward-only pull,
+builds the frontend, recreates the backend, and waits for `GET /health` to succeed. It also checks
+that `.env` has the deploy user's `UID`/`GID` and that `data` and `dist` are writable before changing
+the running application.
+
+The equivalent manual commands are:
+
 ```bash
 git pull
 docker compose run --rm --build frontend-build   # --build or you ship the previous commit
