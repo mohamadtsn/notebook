@@ -15,6 +15,13 @@ services:
       # Required — the server refuses to boot without it. See .env.example.
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      # The AI proxy reads its provider config only from here — the client can never
+      # supply a base URL (SSRF). Unset => /ai/complete answers 503, and the settings
+      # panel has nothing to offer a signed-in user in «سرور» mode.
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_DAILY_LIMIT: ${AI_DAILY_LIMIT:-300}
     volumes:
       # Plain host directory, deliberately not a docker volume: the SQLite file is
       # a real file you can see, back up, and copy. No docker command can drop it.

@@ -6,8 +6,7 @@ IFS=$'\n\t'
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 readonly LOCK_FILE="${DEPLOY_LOCK_FILE:-/tmp/notebook-deploy.lock}"
-readonly HEALTH_RETRIES="${DEPLOY_HEALTH_RETRIES:-15}"
-readonly HEALTH_RETRY_DELAY="${DEPLOY_HEALTH_RETRY_DELAY:-2}"
+readonly HEALTH_TIMEOUT="${DEPLOY_HEALTH_TIMEOUT:-120}"
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*"
@@ -84,28 +83,24 @@ update_source() {
 }
 
 wait_for_healthcheck() {
-  local backend_port attempt
+  local backend_port
   backend_port="$(env_value BACKEND_PORT)"
   backend_port="${backend_port:-3000}"
   [[ "${backend_port}" =~ ^[0-9]+$ ]] || die "BACKEND_PORT in .env must be numeric"
 
-  for ((attempt = 1; attempt <= HEALTH_RETRIES; attempt++)); do
-    if curl --fail --silent --show-error --max-time 5 \
-      "http://127.0.0.1:${backend_port}/health" >/dev/null; then
-      log "Health check passed"
-      return 0
-    fi
-    sleep "${HEALTH_RETRY_DELAY}"
-  done
-
-  die "server did not become healthy; inspect it with: docker compose logs --tail=100 server"
+  # The published port answers before node listens (docker-proxy accepts the TCP
+  # connection and closes it -> curl 52), so wait on the container's own HEALTHCHECK
+  # first and only then verify the host port.
+  if ! curl --fail --silent --show-error --max-time 5 \
+    "http://127.0.0.1:${backend_port}/health" >/dev/null; then
+    die "server is healthy in docker but not reachable on 127.0.0.1:${backend_port}"
+  fi
+  log "Health check passed"
 }
 
 main() {
   [[ $# -eq 0 ]] || die "this script takes no arguments; deploy the currently checked-out tracked branch"
-  [[ "${HEALTH_RETRIES}" =~ ^[1-9][0-9]*$ ]] || die "DEPLOY_HEALTH_RETRIES must be a positive integer"
-  [[ "${HEALTH_RETRY_DELAY}" =~ ^[0-9]+([.][0-9]+)?$ ]] \
-    || die "DEPLOY_HEALTH_RETRY_DELAY must be a non-negative number"
+  [[ "${HEALTH_TIMEOUT}" =~ ^[1-9][0-9]*$ ]] || die "DEPLOY_HEALTH_TIMEOUT must be a positive integer"
 
   require_command git
   require_command docker
@@ -127,7 +122,8 @@ main() {
   docker compose run --rm --build frontend-build
 
   log "Building and starting server"
-  docker compose up -d --build server
+  # --wait blocks until the container HEALTHCHECK reports healthy.
+  docker compose up -d --build --wait --wait-timeout "${HEALTH_TIMEOUT}" server
   wait_for_healthcheck
 
   log "Deployment completed successfully at $(git rev-parse --short HEAD)"
