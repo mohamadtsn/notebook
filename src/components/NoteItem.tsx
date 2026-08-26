@@ -3,6 +3,7 @@ import { Pin } from 'lucide-react';
 import { springDrag } from '../lib/motion';
 import type { Note } from '../types/note';
 import { noteColorVar } from '../types/note';
+import type { Group } from '../types/group';
 import { cx } from './ui/cx';
 
 interface NoteItemProps {
@@ -15,6 +16,12 @@ interface NoteItemProps {
   onDragHover?: (groupId: string | null) => void;
   /** Pointer coordinates. Shift+right-click is already filtered out by the row. */
   onContextMenu?: (x: number, y: number) => void;
+  /**
+   * Set only in the «همه» view, where the row is the only place the group is visible.
+   * Inside a group every row would say the same thing, and an ungrouped note is passed
+   * nothing at all — «بدون گروه» on half the list is noise, not information.
+   */
+  group?: Group;
 }
 
 function formatTime(ms: number): string {
@@ -30,7 +37,7 @@ function formatTime(ms: number): string {
 }
 
 export function NoteItem({
-  note, isActive, onClick, draggable = false, onDragToGroup, onDragHover, onContextMenu,
+  note, isActive, onClick, draggable = false, onDragToGroup, onDragHover, onContextMenu, group,
 }: NoteItemProps) {
   const title = note.title.trim() || 'یادداشت بدون عنوان';
   const preview = note.body.trim();
@@ -90,7 +97,22 @@ export function NoteItem({
       {preview && (
         <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted">{preview}</p>
       )}
-      <p className="mt-1.5 text-xs text-muted">{formatTime(note.updatedAt)}</p>
+      <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted">
+        <span className="shrink-0">{formatTime(note.updatedAt)}</span>
+        {group && (
+          // Truncates rather than wraps: the row is a fixed two lines plus this one, and
+          // the list is `overflow-x-hidden` — a long group name must not widen it.
+          <span className="flex min-w-0 items-center gap-1 rounded-full bg-fill px-1.5 py-0.5 text-[.6875rem]">
+            {group.color && (
+              <span
+                className="size-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: noteColorVar(group.color) }}
+              />
+            )}
+            <span className="min-w-0 truncate">{group.name}</span>
+          </span>
+        )}
+      </div>
     </button>
     </motion.div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { X } from 'lucide-react';
 import type { Settings as SettingsValue, AiSettings } from '../types/settings';
@@ -13,18 +13,23 @@ import { Switch } from './ui/Switch';
 import { popIn } from '../lib/motion';
 import { TARGET_LANGS } from '../utils/ai';
 import { aiCacheSize, clearAiCache } from '../utils/aiCache';
+import { api, type DeviceSession } from '../utils/api';
+import { deviceLabel } from '../utils/device';
 
 interface SettingsProps {
   settings: SettingsValue;
   onUpdate: (patch: Partial<SettingsValue>) => void;
   onUpdateAi: (patch: Partial<AiSettings>) => void;
   email: string | null;
+  /** Needed for the device list; `null` means signed out and the section is not shown. */
+  token: string | null;
   syncState: SyncState;
   settingsState: SyncState;
   pending: number;
   onSync: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
+  onOpenShortcuts: () => void;
   onClose: () => void;
   /** Opened by keyboard → no enter animation. DESIGN.md §5. */
   instant: boolean;
@@ -59,7 +64,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export function Settings(props: SettingsProps) {
-  const { settings, onUpdate, onClose, instant } = props;
+  const { settings, onUpdate, onClose, onOpenShortcuts, instant } = props;
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Focus moves into the *section list*, not the header: landing on «بستن» offers
@@ -111,11 +116,16 @@ export function Settings(props: SettingsProps) {
                 label="ادیتور پیشرفته (آزمایشی)"
               />
             </Field>
+
+            <Field label="کلیدهای میان‌بر" description="یا کلید ؟ در هر جای برنامه.">
+              <Button variant="ghost" onClick={onOpenShortcuts}>نمایش</Button>
+            </Field>
           </Section>
 
           {/* No «درباره» account row: the sync section already states the account state
               and offers the way in. A section that only promises is clutter. */}
           <SyncSection {...props} />
+          <SessionsSection {...props} />
           <AiSection {...props} />
         </div>
       </motion.div>
@@ -183,6 +193,139 @@ function SyncSection({
           {syncState === 'error' || settingsState === 'error' ? 'خطا در همگام‌سازی' : 'به‌روز'}
         </span>
       </Field>
+    </Section>
+  );
+}
+
+/**
+ * Two presses, not a dialog. DESIGN.md §6 gives `danger` a fill "only on confirm", and
+ * §5's undo toast does not apply here: a revoked session cannot be un-revoked.
+ */
+function ConfirmButton({ label, confirmLabel, onConfirm }: {
+  label: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+}) {
+  const [armed, setArmed] = useState(false);
+
+  // Disarm on its own, so a half-pressed button does not sit there waiting to fire.
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [armed]);
+
+  return (
+    <Button
+      variant="danger"
+      size="sm"
+      className={armed ? 'bg-destructive text-on-accent hover:bg-destructive' : undefined}
+      onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}
+    >
+      {armed ? confirmLabel : label}
+    </Button>
+  );
+}
+
+function SessionsSection({ email, token, onSignOut }: SettingsProps) {
+  const [sessions, setSessions] = useState<DeviceSession[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  const load = useCallback(async (t: string) => {
+    try {
+      // Nothing is set before the first await on purpose: a synchronous setState from
+      // inside the effect below would re-render before the effect finished.
+      const { sessions: rows } = await api.sessions(t);
+      setSessions(rows);
+      setFailed(false);
+    } catch {
+      // A device list that cannot load is not an error worth a toast — the panel says so
+      // in place and the rest of settings keeps working.
+      setFailed(true);
+    }
+  }, []);
+
+  // Written inline rather than `void load(token)`: the lint rule reads an effect body
+  // that calls a setState-bearing function as a synchronous cascade, even when every
+  // write is behind an await. Same reason AiResult keeps its request inside the effect.
+  useEffect(() => {
+    if (!token) return;
+    let live = true;
+    void (async () => {
+      try {
+        const { sessions: rows } = await api.sessions(token);
+        if (!live) return;
+        setSessions(rows);
+        setFailed(false);
+      } catch {
+        if (live) setFailed(true);
+      }
+    })();
+    return () => { live = false; };
+  }, [token]);
+
+  // Signed out there are no devices to list, and the sync section above already explains
+  // what an account is for. A second empty promise here would be clutter.
+  if (!email || !token) return null;
+
+  const revoke = async (s: DeviceSession) => {
+    try {
+      await api.revokeSession(token, s.id);
+    } catch {
+      setFailed(true);
+      return;
+    }
+    // Revoking the device in hand invalidated the token that was just used — the only
+    // honest thing left is to sign out locally. Notes stay, as always.
+    if (s.current) return onSignOut();
+    void load(token);
+  };
+
+  const revokeOthers = async () => {
+    try {
+      await api.revokeOtherSessions(token);
+    } catch {
+      setFailed(true);
+      return;
+    }
+    void load(token);
+  };
+
+  return (
+    <Section title="دستگاه‌های واردشده">
+      {failed && (
+        <p className="mb-2 text-xs leading-relaxed text-destructive">
+          فهرست دستگاه‌ها در دسترس نیست.
+        </p>
+      )}
+      {sessions === null && !failed && (
+        <p className="text-xs text-muted">در حال بارگذاری…</p>
+      )}
+
+      {sessions?.map(s => (
+        <Field
+          key={s.id}
+          label={deviceLabel(s.userAgent) + (s.current ? ' — همین دستگاه' : '')}
+          // An absolute date, not «۳ روز پیش»: on a security list, vague is worse.
+          description={`آخرین فعالیت: ${new Date(s.lastSeenAt).toLocaleDateString('fa-IR')}`}
+        >
+          <ConfirmButton
+            label="خروج"
+            confirmLabel={s.current ? 'خروج از این دستگاه؟' : 'مطمئنید؟'}
+            onConfirm={() => void revoke(s)}
+          />
+        </Field>
+      ))}
+
+      {sessions && sessions.length > 1 && (
+        <Field label="بقیهٔ دستگاه‌ها" description="این دستگاه وارد می‌ماند.">
+          <ConfirmButton
+            label="خروج از بقیه"
+            confirmLabel="مطمئنید؟"
+            onConfirm={() => void revokeOthers()}
+          />
+        </Field>
+      )}
     </Section>
   );
 }

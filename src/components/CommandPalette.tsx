@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { FileText, Folder, FolderOpen, Moon, Plus, Settings2, Sun, Trash2 } from 'lucide-react';
+import {
+  FileText, Folder, FolderOpen, Keyboard, Moon, Plus, Settings2, Sun, Trash2,
+} from 'lucide-react';
 import type { Group } from '../types/group';
 import type { Note } from '../types/note';
 import { cx } from './ui/cx';
@@ -23,6 +25,7 @@ interface CommandPaletteProps {
   onToggleDark: () => void;
   onOpenTrash: () => void;
   onOpenSettings: () => void;
+  onOpenShortcuts: () => void;
   groups: Group[];
   /** null while no note is open — the move action is hidden in that case. */
   activeNote: Note | null;
@@ -42,6 +45,7 @@ function matches(haystack: string, needle: string): boolean {
  */
 export function CommandPalette({
   onClose, notes, dark, onSelectNote, onNewNote, onToggleDark, onOpenTrash, onOpenSettings,
+  onOpenShortcuts,
   groups, activeNote, onMoveToGroup,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
@@ -86,6 +90,7 @@ export function CommandPalette({
       },
       { id: 'trash', label: 'سطل زباله', icon: <Trash2 size={15} />, run: onOpenTrash },
       { id: 'settings', label: 'تنظیمات', hint: 'Ctrl+,', icon: <Settings2 size={15} />, run: onOpenSettings },
+      { id: 'shortcuts', label: 'کلیدهای میان‌بر', hint: '?', icon: <Keyboard size={15} />, run: onOpenShortcuts },
       ...(activeNote
         ? [{
             id: 'move',
@@ -114,7 +119,8 @@ export function CommandPalette({
 
     return [...noteResults, ...filteredActions];
   }, [
-    notes, query, dark, onNewNote, onToggleDark, onOpenTrash, onOpenSettings, onSelectNote,
+    notes, query, dark, onNewNote, onToggleDark, onOpenTrash, onOpenSettings, onOpenShortcuts,
+    onSelectNote,
     picking, groups, activeNote, onMoveToGroup,
   ]);
 

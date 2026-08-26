@@ -39,6 +39,7 @@ export function useNotes() {
       pinned: false,
       deletedAt: null,
       groupId,
+      dir: 'auto',
       dirty: true,
       syncedAt: null,
     };
@@ -52,7 +53,7 @@ export function useNotes() {
 
   const updateNote = useCallback((
     id: string,
-    patch: Partial<Pick<Note, 'title' | 'body' | 'color' | 'pinned'>>,
+    patch: Partial<Pick<Note, 'title' | 'body' | 'color' | 'pinned' | 'dir'>>,
   ) => {
     setNotes(prev => {
       const updated = patchNote(prev, id, patch);

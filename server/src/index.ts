@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import { openDb, type Db } from './db.ts';
-import { authRoutes } from './auth.ts';
+import { authRoutes, sessionGuard } from './auth.ts';
 import { syncRoutes } from './sync.ts';
 import { settingsRoutes } from './settings.ts';
 import { aiRoutes, providerFromEnv, type Provider } from './ai.ts';
@@ -17,7 +17,14 @@ export async function buildApp(opts: {
 }) {
   const app = Fastify({ bodyLimit: BODY_LIMIT, logger: process.env.NODE_ENV !== 'test' });
 
-  await app.register(cors, { origin: opts.origin, credentials: true });
+  // `methods` is spelled out because @fastify/cors defaults to GET/HEAD/POST, and the
+  // browser then fails the preflight for anything else. PUT has always been needed by
+  // /settings; DELETE arrived with /sessions and was the one that caught this.
+  await app.register(cors, {
+    origin: opts.origin,
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'],
+  });
   await app.register(jwt, { secret: opts.jwtSecret });
   await app.register(rateLimit, {
     max: 10,
@@ -25,9 +32,14 @@ export async function buildApp(opts: {
     // Only the credential endpoints are throttled; sync is a normal authed workload.
     keyGenerator: req => req.ip,
     // Credential endpoints and the AI endpoint are throttled; sync is a normal authed
-    // workload. A route left in the allowList cannot have its own rateLimit config.
+    // workload, and so are /sessions (a valid token, only the caller's own rows).
+    // A route left in the allowList cannot have its own rateLimit config.
     allowList: req => !(req.url.startsWith('/auth/') || req.url.startsWith('/ai/')),
   });
+
+  // A verified signature is no longer enough: the token must also name a session row
+  // that still exists. That is what makes revocation real — see sessionGuard.
+  const hasSession = sessionGuard(opts.db);
 
   app.decorate('authenticate', async (req: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -35,6 +47,7 @@ export async function buildApp(opts: {
     } catch {
       return reply.code(401).send({ error: 'unauthorized' });
     }
+    if (!hasSession(req)) return reply.code(401).send({ error: 'unauthorized' });
   });
 
   app.get('/health', async () => ({ ok: true }));

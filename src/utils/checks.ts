@@ -7,7 +7,7 @@
  * No framework on purpose — this is the smallest thing that fails if either breaks.
  */
 import assert from 'node:assert/strict';
-import { migrateColor, migrateNotes, toWire, NOTE_COLORS } from '../types/note.ts';
+import { migrateColor, migrateDir, migrateNotes, toWire, NOTE_COLORS } from '../types/note.ts';
 import type { Note } from '../types/note.ts';
 import { detectDirection } from './direction.ts';
 import { cacheKey, evict, type AiCacheEntry } from './aiCache.ts';
@@ -17,6 +17,7 @@ import {
   emptyHistory, record, undo, redo, evictHistories, COALESCE_MS, MAX_ENTRIES,
   type NoteHistory,
 } from './history.ts';
+import { deviceLabel } from './device.ts';
 import { JSDOM } from 'jsdom';
 
 // renderMarkdown sanitises with DOMPurify, which needs a real DOM. Installing one here
@@ -51,7 +52,7 @@ const legacy = {
 } as unknown as Note;
 // A v1 note also picks up the sync fields, starting dirty so it gets pushed once.
 assert.deepEqual(migrateNotes([legacy]), [
-  { ...legacy, color: 'sand', groupId: null, dirty: true, syncedAt: null },
+  { ...legacy, color: 'sand', groupId: null, dir: 'auto', dirty: true, syncedAt: null },
 ]);
 
 // ── Markdown rendering + sanitising ─────────────────────────────────
@@ -129,12 +130,59 @@ assert.equal(detectDirection('۱۲۳ !@#'), 'rtl', 'digits/punctuation are not s
 assert.equal(detectDirection('123 hello سلام'), 'ltr', 'first strong char wins');
 assert.equal(detectDirection('سلام hello'), 'rtl', 'first strong char wins');
 
+// A pinned direction overrides detection — this is the whole point of the control, and
+// the branch lives in useTextDirection, which is a hook and so is asserted at its logic.
+const resolveDir = (text: string, override: 'auto' | 'rtl' | 'ltr') =>
+  override === 'auto' ? detectDirection(text) : override;
+assert.equal(resolveDir('سلام hello', 'auto'), 'rtl');
+assert.equal(resolveDir('سلام hello', 'ltr'), 'ltr', 'pin beats detection');
+assert.equal(resolveDir('hello world', 'rtl'), 'rtl', 'pin beats detection the other way');
+
+// Anything unrecognised reads as `auto`. A stored 'LTR' or a stray null must not end up
+// on a `dir` attribute.
+assert.equal(migrateDir('ltr'), 'ltr');
+assert.equal(migrateDir('rtl'), 'rtl');
+assert.equal(migrateDir(undefined), 'auto', 'a pre-v4 note has no dir');
+assert.equal(migrateDir('LTR'), 'auto', 'case-sensitive on purpose');
+assert.equal(migrateDir(null), 'auto');
+
+// ── Device labels (v4 Phase 5) ──────────────────────────────────────
+// Ordering is the whole risk here: every Chromium browser also claims Chrome and
+// Safari, and iPadOS claims Macintosh.
+assert.equal(
+  deviceLabel('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15'),
+  'Safari روی macOS',
+);
+assert.equal(
+  deviceLabel('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'),
+  'Chrome روی Windows',
+  'Chrome also says Safari — the more specific match has to win',
+);
+assert.equal(
+  deviceLabel('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36 Edg/120.0'),
+  'Edge روی Windows',
+  'Edge also says Chrome AND Safari',
+);
+assert.equal(
+  deviceLabel('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Safari/604.1'),
+  'Safari روی iPad',
+  'iPadOS claims Mac OS X — iPad has to be tested first',
+);
+assert.equal(
+  deviceLabel('Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36'),
+  'Chrome روی Android',
+  'Android also says Linux',
+);
+assert.equal(deviceLabel(null), 'دستگاه ناشناس');
+assert.equal(deviceLabel('curl/8.4.0'), 'دستگاه ناشناس', 'no browser and no platform');
+
 // ── Sync merge (PLAN-V2 Phase 5.4) ──────────────────────────────────
 // The risky path: a background pull must never eat a local edit.
 function note(over: Partial<Note> = {}): Note {
   return {
     id: 'n', title: '', body: '', createdAt: 0, updatedAt: 100,
-    color: null, pinned: false, deletedAt: null, groupId: null, dirty: false, syncedAt: null,
+    color: null, pinned: false, deletedAt: null, groupId: null, dir: 'auto',
+    dirty: false, syncedAt: null,
     ...over,
   };
 }
@@ -249,10 +297,17 @@ assert.equal(dirtyGroup[0].dirty, true, 'the protected group must stay queued');
 // never as undefined — an undefined here would break every `=== null` filter.
 const preGroup = { ...legacy, color: 'yellow' } as unknown as Note;
 assert.equal(migrateNotes([preGroup])[0].groupId, null);
+// Same for the direction pin: a pre-v4 note reads as `auto`, never undefined.
+assert.equal(migrateNotes([preGroup])[0].dir, 'auto');
 
 // groupId travels on the wire — without this the server never learns about the move.
 assert.ok('groupId' in toWire(note({ groupId: 'g1' })));
 assert.equal(toWire(note({ groupId: 'g1' })).groupId, 'g1');
+
+// So does the direction pin — the server's push schema rejects unknown properties, so
+// this and the schema entry have to move together.
+assert.ok('dir' in toWire(note({ dir: 'ltr' })));
+assert.equal(toWire(note({ dir: 'ltr' })).dir, 'ltr');
 
 // Sparse ordering: inserting between two groups takes the midpoint, so a reorder
 // writes ONE row instead of renumbering the whole list.

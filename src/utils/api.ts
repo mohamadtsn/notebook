@@ -16,13 +16,24 @@ async function request<T>(path: string, init: RequestInit, token?: string | null
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
-      'content-type': 'application/json',
+      // Only when there is actually a body. Fastify rejects a request that announces
+      // JSON and then sends nothing with a 400 — which is every bodyless DELETE.
+      ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...init.headers,
     },
   });
   if (!res.ok) throw new ApiError(res.status, `${init.method ?? 'GET'} ${path} → ${res.status}`);
   return res.json() as Promise<T>;
+}
+
+export interface DeviceSession {
+  id: string;
+  createdAt: number;
+  lastSeenAt: number;
+  userAgent: string | null;
+  /** The device making the request. Revoking it is a sign-out. */
+  current: boolean;
 }
 
 export const api = {
@@ -58,6 +69,16 @@ export const api = {
       { method: 'GET' },
       token,
     ),
+
+  // Not under /auth/ — see the comment on the routes. Authenticated, unthrottled.
+  sessions: (token: string) =>
+    request<{ sessions: DeviceSession[] }>('/sessions', { method: 'GET' }, token),
+
+  revokeSession: (token: string, id: string) =>
+    request<{ ok: true }>(`/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }, token),
+
+  revokeOtherSessions: (token: string) =>
+    request<{ ok: true }>('/sessions', { method: 'DELETE' }, token),
 
   putSettings: (token: string, settings: WireSettings, updatedAt: number) =>
     request<{ settings: WireSettings; updatedAt: number }>(

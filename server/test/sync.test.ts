@@ -129,3 +129,29 @@ test('login fails on a wrong password and succeeds on the right one', async () =
   assert.equal(good.statusCode, 200);
   assert.ok(good.json().token);
 });
+test('the direction pin round-trips, and a note without one reads as auto', async () => {
+  const { signUp, push, pull } = await fresh();
+  const headers = await signUp('dir@example.com');
+
+  const res = await push(headers, [
+    note({ id: 'pinned', dir: 'ltr' }),
+    // A client that predates v4 sends no `dir` at all. It must not be rejected, and it
+    // must come back as 'auto' rather than null — the client puts this on a dir="".
+    note({ id: 'legacy' }),
+  ]);
+  assert.equal(res.statusCode, 200, res.body);
+  assert.deepEqual(res.json().rejected, []);
+
+  const notes = (await pull(headers)).json().notes as { id: string; dir: string }[];
+  const byId = new Map(notes.map(n => [n.id, n]));
+  assert.equal(byId.get('pinned')?.dir, 'ltr');
+  assert.equal(byId.get('legacy')?.dir, 'auto');
+});
+
+test('an unknown direction is rejected at the route boundary', async () => {
+  const { signUp, push } = await fresh();
+  const headers = await signUp('baddir@example.com');
+
+  const res = await push(headers, [note({ dir: 'sideways' })]);
+  assert.equal(res.statusCode, 400, res.body);
+});

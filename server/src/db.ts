@@ -17,6 +17,19 @@ export function openDb(file: string): DatabaseSync {
       created_at INTEGER NOT NULL
     );
 
+    -- One row per issued token, keyed by the token's jti claim. Without this the JWT
+    -- is stateless and "sign this device out" cannot mean anything: the old token
+    -- would keep working until it expired 30 days later.
+    CREATE TABLE IF NOT EXISTS sessions (
+      id           TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL REFERENCES users(id),
+      created_at   INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      user_agent   TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+
     CREATE TABLE IF NOT EXISTS notes (
       id         TEXT NOT NULL,
       user_id    TEXT NOT NULL REFERENCES users(id),
@@ -77,6 +90,10 @@ export function openDb(file: string): DatabaseSync {
     .map(c => c.name);
   if (!noteColumns.includes('group_id')) {
     db.exec('ALTER TABLE notes ADD COLUMN group_id TEXT');
+  }
+  // Pinned body direction. NULL on every pre-v4 row and read back as 'auto'.
+  if (!noteColumns.includes('dir')) {
+    db.exec('ALTER TABLE notes ADD COLUMN dir TEXT');
   }
 
   return db;

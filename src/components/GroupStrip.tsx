@@ -54,7 +54,10 @@ function Row({
       <button
         onClick={onSelect}
         aria-current={selected ? 'true' : undefined}
-        className="flex min-h-11 flex-1 items-center gap-2 px-3 text-start text-sm"
+        // `min-w-0`: a flex item defaults to `min-width: auto`, so this button refused to
+        // shrink below its label and a long group name pushed the whole list 60px wider
+        // than its box. The list is `overflow-x-hidden`, so it clipped silently.
+        className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-3 text-start text-sm"
       >
         <span className={cx('flex-1 truncate', selected ? 'text-ink' : 'text-ink-soft')}>
           {label}

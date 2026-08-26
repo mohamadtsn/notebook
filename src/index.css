@@ -179,8 +179,17 @@ body {
    wrong. No `border-radius` here — the outline already follows the element's
    own radius, and forcing 4px squared off every rounded field.
    A control that provides a *better* indicator (a ring that matches its
-   radius, a lit container) opts out with `focus-visible:outline-none`.     */
-:where(a, button, [role="button"], summary, select, [tabindex]):focus-visible {
+   radius, a lit container) opts out with `focus-visible:outline-none`.
+
+   `[tabindex]` excludes negative values on purpose. A `tabindex="-1"` element is
+   not keyboard-reachable — it is a programmatic focus target, like the scroller a
+   dialog moves focus into on open — and Chrome still fires `:focus-visible` on it,
+   which drew a 2px accent frame around the whole panel. (The per-component opt-out
+   the comment above offers cannot rescue that case: this stylesheet is unlayered,
+   so it outranks every Tailwind utility no matter the specificity.)               */
+:where(
+  a, button, [role="button"], summary, select, [tabindex]:not([tabindex^="-"])
+):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

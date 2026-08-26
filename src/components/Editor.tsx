@@ -23,7 +23,7 @@ const CodeEditor = lazy(() => import('./CodeEditor').then(m => ({ default: m.Cod
 interface EditorProps {
   note: Note;
   isTrash?: boolean;
-  onUpdate: (id: string, patch: Partial<Pick<Note, 'title' | 'body' | 'color' | 'pinned'>>) => void;
+  onUpdate: (id: string, patch: Partial<Pick<Note, 'title' | 'body' | 'color' | 'pinned' | 'dir'>>) => void;
   onTrash: (id: string) => void;
   onRestore: (id: string) => void;
   onPermanentDelete: (id: string) => void;
@@ -113,7 +113,8 @@ export function Editor({
   const debouncedBody  = useDebounce(body, 500);
 
   const titleDir = useTextDirection(title);
-  const bodyDir  = useTextDirection(body);
+  // Only the body: a title is one line, and pinning it is not what the control promises.
+  const bodyDir  = useTextDirection(body, note.dir);
 
   // Deliberately keyed on the debounced draft only: adding `note` would re-fire
   // this on every store update and write the draft back over a newer value.
@@ -277,6 +278,7 @@ export function Editor({
           onModeChange={setMode}
           onTogglePin={onTogglePin}
           onSetColor={onSetColor}
+          onSetDir={dir => onUpdate(note.id, { dir })}
           onExport={format => exportNote(note, format)}
           onTrash={onTrash}
           onRestore={onRestore}

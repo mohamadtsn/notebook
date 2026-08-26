@@ -80,6 +80,12 @@ export function Sidebar({
       ? source
       : source.filter(n => (n.groupId ?? null) === selectedGroup);
 
+  // Only «همه» shows the badge, and only outside the trash: a trashed note's group is
+  // not what anyone is looking for there, and the trash view is flat already.
+  const byId = selectedGroup === 'all' && view === 'notes'
+    ? new Map(groups.map(g => [g.id, g]))
+    : null;
+
   const sorted = [...filtered].sort((a, b) => {
     // Pinned first, but only where pinning means anything
     if (view === 'notes') {
@@ -145,6 +151,9 @@ export function Sidebar({
             onDragHover={setDropTargetId}
             onDragToGroup={groupId => onMoveNote(note.id, groupId)}
             onContextMenu={(x, y) => setMenu({ x, y, note })}
+            // `get` on a null groupId misses, and so does a group id that sync has not
+            // delivered yet — both correctly render no badge rather than a broken one.
+            group={byId?.get(note.groupId ?? '') ?? undefined}
           />
         ))}
       </div>

@@ -9,6 +9,7 @@ import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
 import { EmptyState } from './components/EmptyState';
 import { CommandPalette } from './components/CommandPalette';
+import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { InstallPrompt } from './components/InstallPrompt';
 import { AuthDialog } from './components/AuthDialog';
 import { Settings } from './components/Settings';
@@ -70,6 +71,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Keyboard paths open the panel instantly; a pointer click gets the enter. DESIGN.md §5.
   const [settingsInstant, setSettingsInstant] = useState(false);
+  const [shortcuts, setShortcuts] = useState<{ instant: boolean } | null>(null);
   const [view, setView] = useState<View>('notes');
 
   const { token, email, signIn, signOut } = useAuth();
@@ -95,6 +97,7 @@ export default function App() {
     onNewNote: newNote,
     onOpenPalette: () => setPaletteOpen(true),
     onOpenSettings: () => { setSettingsInstant(true); setSettingsOpen(true); },
+    onOpenShortcuts: () => setShortcuts({ instant: true }),
     onDeselect: () => selectNote(null),
   });
 
@@ -277,6 +280,7 @@ export default function App() {
           onToggleDark={toggleDark}
           onOpenTrash={() => handleViewChange('trash')}
           onOpenSettings={() => { setSettingsInstant(true); setSettingsOpen(true); }}
+          onOpenShortcuts={() => setShortcuts({ instant: false })}
           groups={activeGroups}
           activeNote={activeNote}
           onMoveToGroup={groupId => { if (activeNote) setGroup(activeNote.id, groupId); }}
@@ -294,6 +298,7 @@ export default function App() {
             onUpdate={updateSettings}
             onUpdateAi={updateAi}
             email={email}
+            token={token}
             syncState={syncState}
             settingsState={settingsState}
             pending={notes.filter(n => n.dirty).length}
@@ -301,7 +306,18 @@ export default function App() {
             onSignIn={() => { setSettingsOpen(false); setAuthOpen(true); }}
             onSignOut={signOut}
             onClose={() => setSettingsOpen(false)}
+            onOpenShortcuts={() => setShortcuts({ instant: false })}
             instant={settingsInstant}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {shortcuts && (
+          <ShortcutsHelp
+            experimentalEditor={settings.experimentalEditor}
+            onClose={() => setShortcuts(null)}
+            instant={shortcuts.instant}
           />
         )}
       </AnimatePresence>

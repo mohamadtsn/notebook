@@ -4,11 +4,22 @@ interface Options {
   onNewNote: () => void;
   onOpenPalette: () => void;
   onOpenSettings: () => void;
+  onOpenShortcuts: () => void;
   onDeselect: () => void;
 }
 
+/**
+ * A writing surface owns its keystrokes. `isContentEditable` covers the advanced
+ * editor, which is neither an input nor a textarea.
+ */
+function isWriting(el: Element | null): boolean {
+  return el instanceof HTMLInputElement
+    || el instanceof HTMLTextAreaElement
+    || (el instanceof HTMLElement && el.isContentEditable);
+}
+
 export function useKeyboardShortcuts({
-  onNewNote, onOpenPalette, onOpenSettings, onDeselect,
+  onNewNote, onOpenPalette, onOpenSettings, onOpenShortcuts, onDeselect,
 }: Options) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -29,6 +40,14 @@ export function useKeyboardShortcuts({
         onOpenSettings();
       }
 
+      // No modifier, so this one has to yield to anyone typing — otherwise a «?» in a
+      // note opens a panel instead of landing in the text. Same dialog guard as Escape.
+      if (e.key === '?' && !ctrl && !isWriting(document.activeElement)
+          && !document.querySelector('[role="dialog"]')) {
+        e.preventDefault();
+        onOpenShortcuts();
+      }
+
       if (e.key === 'Escape') {
         // Something closer to the keypress already answered it — the advanced editor
         // collapsing a multi-cursor selection is the case that forced this. Closing the
@@ -38,14 +57,8 @@ export function useKeyboardShortcuts({
         // open palette / auth form / settings panel while that layer closes.
         if (document.querySelector('[role="dialog"]')) return;
         const active = document.activeElement;
-        // `isContentEditable` covers the advanced editor: it is a writing surface, not
-        // a form control, and dropping it here closed the note instead of blurring.
-        if (
-          active instanceof HTMLInputElement
-          || active instanceof HTMLTextAreaElement
-          || (active instanceof HTMLElement && active.isContentEditable)
-        ) {
-          active.blur();
+        if (isWriting(active)) {
+          (active as HTMLElement).blur();
         } else {
           onDeselect();
         }
@@ -54,5 +67,5 @@ export function useKeyboardShortcuts({
 
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onNewNote, onOpenPalette, onOpenSettings, onDeselect]);
+  }, [onNewNote, onOpenPalette, onOpenSettings, onOpenShortcuts, onDeselect]);
 }

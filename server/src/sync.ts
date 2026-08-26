@@ -22,6 +22,10 @@ const noteSchema = {
     // Must ship in the same change as the client's toWire: `additionalProperties:
     // false` means a client sending groupId without this has its ENTIRE push rejected.
     groupId: { type: ['string', 'null'], maxLength: 64 },
+    // Same rule as groupId: this must ship with the client's toWire, or a push carrying
+    // it is rejected whole. Enumerated rather than a free string — it goes straight back
+    // out as a `dir` attribute.
+    dir: { type: 'string', enum: ['auto', 'rtl', 'ltr'] },
   },
 } as const;
 
@@ -53,6 +57,7 @@ interface WireNote {
   updatedAt: number;
   deletedAt: number | null;
   groupId: string | null;
+  dir: 'auto' | 'rtl' | 'ltr';
 }
 
 interface WireGroup {
@@ -85,6 +90,7 @@ interface Row {
   updated_at: number;
   deleted_at: number | null;
   group_id: string | null;
+  dir: string | null;
 }
 
 const toWireGroup = (r: GroupRow): WireGroup => ({
@@ -107,6 +113,8 @@ const toWire = (r: Row): WireNote => ({
   updatedAt: r.updated_at,
   deletedAt: r.deleted_at,
   groupId: r.group_id,
+  // NULL means a row written before v4, not an unset preference.
+  dir: r.dir === 'rtl' || r.dir === 'ltr' ? r.dir : 'auto',
 });
 
 export async function syncRoutes(app: FastifyInstance, db: Db) {
@@ -114,12 +122,13 @@ export async function syncRoutes(app: FastifyInstance, db: Db) {
   // another user matches nothing and is never read or overwritten.
   const stored = db.prepare('SELECT updated_at FROM notes WHERE id = ? AND user_id = ?');
   const upsert = db.prepare(`
-    INSERT INTO notes (id, user_id, title, body, color, pinned, created_at, updated_at, deleted_at, group_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO notes (id, user_id, title, body, color, pinned, created_at, updated_at, deleted_at, group_id, dir)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id, user_id) DO UPDATE SET
       title = excluded.title, body = excluded.body, color = excluded.color,
       pinned = excluded.pinned, updated_at = excluded.updated_at,
-      deleted_at = excluded.deleted_at, group_id = excluded.group_id
+      deleted_at = excluded.deleted_at, group_id = excluded.group_id,
+      dir = excluded.dir
   `);
 
   const storedGroup = db.prepare('SELECT updated_at FROM groups WHERE id = ? AND user_id = ?');
@@ -165,7 +174,7 @@ export async function syncRoutes(app: FastifyInstance, db: Db) {
       }
       upsert.run(
         n.id, uid, n.title, n.body, n.color ?? null, n.pinned ? 1 : 0,
-        n.createdAt, n.updatedAt, n.deletedAt ?? null, n.groupId ?? null,
+        n.createdAt, n.updatedAt, n.deletedAt ?? null, n.groupId ?? null, n.dir ?? 'auto',
       );
     }
 

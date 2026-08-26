@@ -164,7 +164,13 @@ export function CodeEditor({
         // text. (`&light` / `&dark` themselves are baseTheme-only syntax — using them here
         // throws "Unsupported selector" at runtime; a theme states its own colours and
         // takes precedence over the base theme at equal specificity.)
-        '.cm-selectionBackground': { backgroundColor: 'var(--accent-soft)' },
+        //
+        // Both rules state `--selection`. The unfocused one used to be `--accent-soft`,
+        // which is the row-tint token at .12 alpha — behind body text that is close
+        // enough to invisible that a selection made and then clicked away from looked
+        // like no selection at all. DESIGN.md §1 assigns `--selection` to "selected text,
+        // everywhere", and dimming on blur is not a distinction the design system makes.
+        '.cm-selectionBackground': { backgroundColor: 'var(--selection)' },
         '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
           backgroundColor: 'var(--selection)',
         },

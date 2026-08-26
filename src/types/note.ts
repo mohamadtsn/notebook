@@ -9,6 +9,15 @@ export interface Note {
   deletedAt: number | null;
   /** `null` is the real, always-present «بدون گروه» bucket — not an error state. */
   groupId: string | null;
+  /**
+   * Body direction. `auto` runs `detectDirection`; the other two pin it.
+   *
+   * Pinning is not a preference — it is the only fix available for a mixed-script note.
+   * Chrome's bidi hit-testing in a `dir="rtl"` <textarea> resolves a drag across a
+   * script boundary to the wrong offsets (measured; see the v4 plan, Phase 1), and that
+   * is the browser's, not ours. `ltr` takes the note out of bidi layout entirely.
+   */
+  dir: NoteDir;
   /** Local-only sync bookkeeping. Stripped before a note goes to the server. */
   dirty: boolean;
   syncedAt: number | null;
@@ -33,7 +42,24 @@ export function toWire(n: Note): WireNote {
     pinned: n.pinned,
     deletedAt: n.deletedAt,
     groupId: n.groupId,
+    dir: n.dir,
   };
+}
+
+/** `auto` = derive from the text; the others pin it. */
+export type NoteDir = 'auto' | 'rtl' | 'ltr';
+
+export const NOTE_DIRS: NoteDir[] = ['auto', 'rtl', 'ltr'];
+
+export const NOTE_DIR_LABEL: Record<NoteDir, string> = {
+  auto: 'جهت متن: خودکار',
+  rtl:  'جهت متن: راست‌به‌چپ',
+  ltr:  'جهت متن: چپ‌به‌راست',
+};
+
+/** Unknown values (an older build, a hand-edited store) fall back to `auto`. */
+export function migrateDir(dir: unknown): NoteDir {
+  return NOTE_DIRS.includes(dir as NoteDir) ? (dir as NoteDir) : 'auto';
 }
 
 export type NoteColor = 'sand' | 'sky' | 'sage' | 'rose' | 'lilac';
@@ -73,6 +99,7 @@ export function migrateNotes(notes: Note[]): Note[] {
     ...n,
     color: migrateColor(n.color),
     groupId: n.groupId ?? null,
+    dir: migrateDir(n.dir),
     // Notes written before sync existed have never been pushed, so they start dirty.
     dirty: n.dirty ?? true,
     syncedAt: n.syncedAt ?? null,

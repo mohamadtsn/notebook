@@ -1,6 +1,8 @@
-import { Download, MoreHorizontal, Pin, Trash2, Undo2 } from 'lucide-react';
-import type { Note, NoteColor } from '../types/note';
-import { NOTE_COLORS, NOTE_COLOR_LABEL, noteColorVar } from '../types/note';
+import {
+  Download, MoreHorizontal, Pilcrow, PilcrowLeft, PilcrowRight, Pin, Trash2, Undo2,
+} from 'lucide-react';
+import type { Note, NoteColor, NoteDir } from '../types/note';
+import { NOTE_COLORS, NOTE_COLOR_LABEL, NOTE_DIRS, NOTE_DIR_LABEL, noteColorVar } from '../types/note';
 import { IconButton } from './ui/IconButton';
 import { Popover, PopoverItem } from './ui/Popover';
 import { MoveToGroup } from './MoveToGroup';
@@ -18,11 +20,18 @@ interface EditorToolbarProps {
   onModeChange: (mode: EditorMode) => void;
   onTogglePin: (id: string) => void;
   onSetColor: (id: string, color: NoteColor | null) => void;
+  onSetDir: (dir: NoteDir) => void;
   onExport: (format: 'txt' | 'md') => void;
   onTrash: (id: string) => void;
   onRestore: (id: string) => void;
   onPermanentDelete: (id: string) => void;
 }
+
+const DIR_ICON: Record<NoteDir, typeof Pilcrow> = {
+  auto: Pilcrow,
+  rtl:  PilcrowRight,
+  ltr:  PilcrowLeft,
+};
 
 const MODES: { value: EditorMode; label: string }[] = [
   { value: 'write', label: 'نوشتن' },
@@ -35,8 +44,9 @@ const MODES: { value: EditorMode; label: string }[] = [
  */
 export function EditorToolbar({
   note, groups, onMove, isTrash, mode, onModeChange,
-  onTogglePin, onSetColor, onExport, onTrash, onRestore, onPermanentDelete,
+  onTogglePin, onSetColor, onSetDir, onExport, onTrash, onRestore, onPermanentDelete,
 }: EditorToolbarProps) {
+  const DirIcon = DIR_ICON[note.dir];
   return (
     <div className="glass-panel flex items-center gap-1 rounded-full p-1">
       <SegmentedControl
@@ -63,6 +73,17 @@ export function EditorToolbar({
             onClick={() => onTogglePin(note.id)}
           >
             <Pin size={16} />
+          </IconButton>
+
+          {/* Cycles auto → rtl → ltr. Three states do not earn a popover, and the label
+              names the state the button is IN — `active` marks the note as pinned so a
+              forced direction is visible without opening anything. */}
+          <IconButton
+            label={NOTE_DIR_LABEL[note.dir]}
+            active={note.dir !== 'auto'}
+            onClick={() => onSetDir(NOTE_DIRS[(NOTE_DIRS.indexOf(note.dir) + 1) % NOTE_DIRS.length])}
+          >
+            <DirIcon size={16} />
           </IconButton>
 
           <Popover
