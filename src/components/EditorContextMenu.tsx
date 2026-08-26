@@ -1,6 +1,7 @@
 import { ClipboardPaste, Copy, Languages, Scissors, Sparkles } from 'lucide-react';
 import type { Group } from '../types/group';
 import type { AiTask } from '../utils/aiCache';
+import { isCoarsePointer } from '../utils/device';
 import { ContextMenu } from './ui/ContextMenu';
 import { PopoverItem } from './ui/Popover';
 import { MoveToGroup } from './MoveToGroup';
@@ -95,9 +96,13 @@ export function EditorContextMenu({
         />
       </div>
 
-      <p className="border-t border-separator px-3 pt-2 pb-1 text-[.6875rem] leading-relaxed text-muted">
-        برای منوی مرورگر، Shift + کلیک راست
-      </p>
+      {/* Advice for a keyboard and a mouse. On a phone there is neither, and the
+          platform's own callout is reached by long-pressing the text directly. */}
+      {!isCoarsePointer() && (
+        <p className="border-t border-separator px-3 pt-2 pb-1 text-[.6875rem] leading-relaxed text-muted">
+          برای منوی مرورگر، Shift + کلیک راست
+        </p>
+      )}
     </ContextMenu>
   );
 }

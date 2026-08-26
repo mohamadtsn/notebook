@@ -8,6 +8,7 @@ import { useDebounce } from '../hooks/useDebounce';
 import { useHistory } from '../hooks/useHistory';
 import { useTextDirection } from '../hooks/useTextDirection';
 import { renderMarkdown } from '../utils/markdown';
+import { isCoarsePointer } from '../utils/device';
 import { EditorToolbar, type EditorMode } from './EditorToolbar';
 import { EditorContextMenu } from './EditorContextMenu';
 import { AiResult } from './AiResult';
@@ -98,6 +99,30 @@ export function Editor({
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const cmRef = useRef<CodeEditorHandle | null>(null);
   const advanced = settings.experimentalEditor;
+  const coarse = isCoarsePointer();
+
+  /**
+   * Whether the body currently holds a range. Only ever used to decide whether the
+   * toolbar's selection button is offered — the menu itself still reads the selection
+   * at the moment it opens, because that is the value the actions must act on.
+   */
+  const [hasSelection, setHasSelection] = useState(false);
+  useEffect(() => {
+    // One document-level listener covers both bodies: a `<textarea>` reports its own
+    // selection changes here, and CodeMirror's contenteditable moves the document
+    // selection. Neither needs debouncing — this only flips a boolean.
+    const read = () => {
+      const sel = advanced
+        ? cmRef.current?.selection()
+        : bodyRef.current && {
+            from: bodyRef.current.selectionStart,
+            to: bodyRef.current.selectionEnd,
+          };
+      setHasSelection(!!sel && sel.from !== sel.to);
+    };
+    document.addEventListener('selectionchange', read);
+    return () => document.removeEventListener('selectionchange', read);
+  }, [advanced]);
 
   // Undo history outlives this component: it is keyed by note id and persisted, so it
   // survives note switches, the preview toggle, and a reload. See utils/history.ts.
@@ -176,13 +201,37 @@ export function Editor({
    * Shift passes straight through to the browser's own menu — Persian spellcheck
    * suggestions live there and taking them away is a regression, not a redesign.
    * The same applies wherever the menu's actions cannot apply: preview and trash.
+   *
+   * On a coarse pointer this bails entirely, `preventDefault` included. The long press
+   * is how the platform selects text, and Chrome fires `contextmenu` when that timer
+   * elapses — before the selection handles settle, so the range read here is a bare
+   * caret — while suppressing the default takes away the OS callout that carries
+   * select-all, paste and the handles themselves. There is no Shift key on a phone to
+   * get any of it back. The toolbar button below is the door instead.
    */
   const openMenu = (e: React.MouseEvent) => {
+    if (coarse) return;
     if (e.shiftKey || isTrash || mode === 'preview') return;
     const el = bodyRef.current;
     if (!el) return;
     e.preventDefault();
     openMenuAt(e.clientX, e.clientY, el);
+  };
+
+  /**
+   * The toolbar's selection button. Anchored under its own rect, and — the point of the
+   * whole detour — the selection is read *now*, on an explicit tap, by which time the
+   * platform's handles have long since settled.
+   */
+  const openSelectionMenu = (x: number, y: number) => {
+    if (isTrash || mode === 'preview') return;
+    if (advanced) {
+      const sel = cmRef.current?.selection();
+      if (sel) setMenu({ x, y, keyboard: false, ...sel });
+      return;
+    }
+    const el = bodyRef.current;
+    if (el) openMenuAt(x, y, el);
   };
 
   /** Shift+F10 / the Menu key, anchored to the textarea. DESIGN.md §6, §8. */
@@ -283,6 +332,9 @@ export function Editor({
           onTrash={onTrash}
           onRestore={onRestore}
           onPermanentDelete={onPermanentDelete}
+          onSelectionMenu={!isTrash && mode === 'write' && (coarse || hasSelection)
+            ? openSelectionMenu
+            : undefined}
         />
       </div>
 

@@ -37,3 +37,12 @@ export function deviceLabel(userAgent: string | null): string {
   if (browser && platform) return `${browser} روی ${platform}`;
   return browser ?? platform ?? 'دستگاه ناشناس';
 }
+
+/**
+ * Touch or pen — the long press belongs to the platform on such a device, so our own
+ * menus need an explicit affordance instead of the `contextmenu` event. Read per call
+ * rather than cached: a hybrid laptop can gain and lose a touch pointer at runtime.
+ */
+export function isCoarsePointer(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+}
