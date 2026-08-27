@@ -7,7 +7,9 @@ RUN npm ci --omit=dev
 
 FROM node:24-alpine
 WORKDIR /app
-ENV NODE_ENV=production DB_FILE=/data/notebook.db PORT=3000
+# Attachment blobs sit beside the database on the same host bind mount, for the same
+# stated reason: they are real files no docker command can wipe.
+ENV NODE_ENV=production DB_FILE=/data/notebook.db ATTACHMENTS_DIR=/data/attachments PORT=3000
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./

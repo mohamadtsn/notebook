@@ -4,6 +4,10 @@ import { buildApp } from '../src/index.ts';
 import { openDb } from '../src/db.ts';
 import type { Provider } from '../src/ai.ts';
 
+// The proxy is behind the `pro` tier (tiers.ts). These tests are about the proxy's own
+// behaviour, so its callers are whitelisted; the gate itself is covered in tiers.test.ts.
+process.env.PRO_EMAILS = 'a@example.com,b@example.com';
+
 async function fresh(provider?: Provider) {
   const app = await buildApp({
     db: openDb(':memory:'),

@@ -1,6 +1,7 @@
 import type { WireNote } from '../types/note';
 import type { WireSettings } from '../types/settings';
 import type { WireGroup } from '../types/group';
+import type { WireAttachment } from '../types/attachment';
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
@@ -36,7 +37,30 @@ export interface DeviceSession {
   current: boolean;
 }
 
+/** `/auth/me`. `isAdmin` is derived server-side from ADMIN_EMAILS, never from the token. */
+export interface Me {
+  id: string;
+  email: string;
+  tier: 'free' | 'pro';
+  isAdmin: boolean;
+}
+
+/** One row of `/admin/users`. Server-computed: the client never counts anything itself. */
+export interface AdminUser {
+  id: string;
+  email: string;
+  tier: 'free' | 'pro';
+  disabled: boolean;
+  createdAt: number;
+  noteCount: number;
+  sessionCount: number;
+  aiUsedToday: number;
+  attachmentBytes: number;
+}
+
 export const api = {
+  me: (token: string) => request<Me>('/auth/me', { method: 'GET' }, token),
+
   register: (email: string, password: string) =>
     request<{ token: string }>('/auth/register', {
       method: 'POST',
@@ -56,8 +80,15 @@ export const api = {
       token,
     ),
 
+  // `attachments` is pull-only: an attachment is created and deleted through
+  // /attachments, both of which need the network, so nothing is ever queued locally.
   pull: (token: string, since: number) =>
-    request<{ notes: WireNote[]; groups: WireGroup[]; serverTime: number }>(
+    request<{
+      notes: WireNote[];
+      groups: WireGroup[];
+      attachments?: WireAttachment[];
+      serverTime: number;
+    }>(
       `/sync/pull?since=${since}`,
       { method: 'GET' },
       token,
@@ -79,6 +110,31 @@ export const api = {
 
   revokeOtherSessions: (token: string) =>
     request<{ ok: true }>('/sessions', { method: 'DELETE' }, token),
+
+  admin: {
+    // The server caps `limit` at 100 and validates it at the route boundary; this is the
+    // page size the panel asks for, not the trusted one.
+    users: (token: string, limit = 50, offset = 0) =>
+      request<{ total: number; users: AdminUser[] }>(
+        `/admin/users?limit=${limit}&offset=${offset}`,
+        { method: 'GET' },
+        token,
+      ),
+
+    patchUser: (token: string, id: string, patch: { tier?: 'free' | 'pro'; disabled?: boolean }) =>
+      request<{ ok: true }>(
+        `/admin/users/${encodeURIComponent(id)}`,
+        { method: 'PATCH', body: JSON.stringify(patch) },
+        token,
+      ),
+
+    revokeSessions: (token: string, id: string) =>
+      request<{ ok: true }>(
+        `/admin/users/${encodeURIComponent(id)}/sessions`,
+        { method: 'DELETE' },
+        token,
+      ),
+  },
 
   putSettings: (token: string, settings: WireSettings, updatedAt: number) =>
     request<{ settings: WireSettings; updatedAt: number }>(

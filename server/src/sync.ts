@@ -80,6 +80,47 @@ interface GroupRow {
   deleted_at: number | null;
 }
 
+/**
+ * Attachments ride the pull so a second device knows a note has files without a request
+ * per note. They are NOT in the push schema and that is deliberate: an attachment is
+ * created by `POST /attachments` and tombstoned by `DELETE /attachments/:id`, both of
+ * which need the network anyway (there is no offline blob cache in v1). A client
+ * therefore never holds an unpushed attachment change, so a push field for them would
+ * always be an empty array — dead schema that still has to be kept correct.
+ */
+interface WireAttachment {
+  id: string;
+  noteId: string;
+  name: string;
+  mime: string;
+  size: number;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+}
+
+interface AttachmentRow {
+  id: string;
+  note_id: string;
+  name: string;
+  mime: string;
+  size: number;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+const toWireAttachment = (r: AttachmentRow): WireAttachment => ({
+  id: r.id,
+  noteId: r.note_id,
+  name: r.name,
+  mime: r.mime,
+  size: r.size,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+  deletedAt: r.deleted_at,
+});
+
 interface Row {
   id: string;
   title: string;
@@ -145,6 +186,9 @@ export async function syncRoutes(app: FastifyInstance, db: Db) {
   const since = db.prepare(
     'SELECT * FROM notes WHERE user_id = ? AND updated_at > ? ORDER BY updated_at',
   );
+  const attachmentsSince = db.prepare(
+    'SELECT * FROM attachments WHERE user_id = ? AND updated_at > ? ORDER BY updated_at',
+  );
 
   app.post('/sync/push', {
     onRequest: [app.authenticate],
@@ -204,9 +248,12 @@ export async function syncRoutes(app: FastifyInstance, db: Db) {
     },
   }, async req => {
     const { since: cursor } = req.query as { since: number };
+    const uid = userId(req);
     return {
-      notes: (since.all(userId(req), cursor) as unknown as Row[]).map(toWire),
-      groups: (groupsSince.all(userId(req), cursor) as unknown as GroupRow[]).map(toWireGroup),
+      notes: (since.all(uid, cursor) as unknown as Row[]).map(toWire),
+      groups: (groupsSince.all(uid, cursor) as unknown as GroupRow[]).map(toWireGroup),
+      attachments: (attachmentsSince.all(uid, cursor) as unknown as AttachmentRow[])
+        .map(toWireAttachment),
       serverTime: Date.now(),
     };
   });

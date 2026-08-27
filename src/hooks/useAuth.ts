@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { api } from '../utils/api';
+import { useCallback, useEffect, useState } from 'react';
+import { ApiError, api, type Me } from '../utils/api';
 import { getItem, setItem } from '../utils/storage';
 import { clearAiCache } from '../utils/aiCache';
 
@@ -39,5 +39,47 @@ export function useAuth() {
     setEmail(null);
   }, []);
 
-  return { token, email, signIn, signOut };
+  /**
+   * Who the token belongs to, as the server sees it right now. Fetched on mount and
+   * whenever the token changes, never derived from the token itself — a tier or an admin
+   * promotion has to take effect on the next request, not in thirty days.
+   *
+   * A 401 here is the disabled-account path. It goes through the ordinary `signOut`,
+   * which keeps every local note: being locked out of sync is not a reason to lose
+   * writing. `me` is `null` while it is in flight, which reads as `free` — the worst
+   * that costs a pro user is a moment without the AI rows.
+   */
+  // Stored with the token it was fetched for, rather than cleared on sign-out: a bare
+  // `me` would still be the previous account's for the render between a token change and
+  // the response, which is exactly long enough to show a free account the AI rows.
+  const [me, setMe] = useState<{ token: string; value: Me } | null>(null);
+  const current = me?.token === token ? me.value : null;
+
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    // Inline rather than `void load(token)`, matching SessionsSection: the lint rule
+    // reads an effect that calls a setState-bearing function as a synchronous cascade,
+    // even when every write is behind an await.
+    void (async () => {
+      try {
+        const value = await api.me(token);
+        if (alive) setMe({ token, value });
+      } catch (err) {
+        if (!alive) return;
+        // Anything else is a network blip; the app is offline-first and carries on.
+        if (err instanceof ApiError && err.status === 401) signOut();
+      }
+    })();
+    return () => { alive = false; };
+  }, [token, signOut]);
+
+  return {
+    token,
+    email,
+    signIn,
+    signOut,
+    tier: current?.tier ?? 'free',
+    isAdmin: current?.isAdmin ?? false,
+  };
 }

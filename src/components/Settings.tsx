@@ -15,6 +15,7 @@ import { TARGET_LANGS } from '../utils/ai';
 import { aiCacheSize, clearAiCache } from '../utils/aiCache';
 import { api, type DeviceSession } from '../utils/api';
 import { deviceLabel } from '../utils/device';
+import { AdminPanel } from './AdminPanel';
 
 interface SettingsProps {
   settings: SettingsValue;
@@ -23,6 +24,9 @@ interface SettingsProps {
   email: string | null;
   /** Needed for the device list; `null` means signed out and the section is not shown. */
   token: string | null;
+  /** From `/auth/me`, not from the token. `free` while signed out or still loading. */
+  tier: 'free' | 'pro';
+  isAdmin: boolean;
   syncState: SyncState;
   settingsState: SyncState;
   pending: number;
@@ -127,6 +131,7 @@ export function Settings(props: SettingsProps) {
           <SyncSection {...props} />
           <SessionsSection {...props} />
           <AiSection {...props} />
+          <AdminSection {...props} />
         </div>
       </motion.div>
     </div>
@@ -330,7 +335,20 @@ function SessionsSection({ email, token, onSignOut }: SettingsProps) {
   );
 }
 
-function AiSection({ settings, onUpdateAi, email, onSignIn }: SettingsProps) {
+/**
+ * Absent unless `/auth/me` says so. The server refuses `/admin/*` to everyone else
+ * regardless — this is the convenience half of that gate, not the gate.
+ */
+function AdminSection({ token, isAdmin }: SettingsProps) {
+  if (!token || !isAdmin) return null;
+  return (
+    <Section title="مدیریت کاربران">
+      <AdminPanel token={token} />
+    </Section>
+  );
+}
+
+function AiSection({ settings, onUpdateAi, email, tier, onSignIn }: SettingsProps) {
   const [cacheCount, setCacheCount] = useState(aiCacheSize);
   const direct = settings.ai.mode === 'direct';
 
@@ -353,6 +371,17 @@ function AiSection({ settings, onUpdateAi, email, onSignIn }: SettingsProps) {
       {!direct && !email && (
         <Field label="حساب" description="حالت «سرور» به حساب نیاز دارد.">
           <Button variant="primary" size="sm" onClick={onSignIn}>ورود</Button>
+        </Field>
+      )}
+
+      {/* Signed in but not upgraded: an explanation, not controls that cannot work.
+          «مستقیم» is right there in the switch above and needs nothing from us. */}
+      {!direct && email && tier !== 'pro' && (
+        <Field
+          label="حساب"
+          description="حالت «سرور» برای حساب شما فعال نیست. می‌توانید از حالت «مستقیم» با کلید خودتان استفاده کنید."
+        >
+          <span className="text-xs text-muted">حساب ارتقا نیافته</span>
         </Field>
       )}
 

@@ -15,6 +15,7 @@ import { AuthDialog } from './components/AuthDialog';
 import { Settings } from './components/Settings';
 import { SyncStatus } from './components/SyncStatus';
 import { useAuth } from './hooks/useAuth';
+import { useAttachments } from './hooks/useAttachments';
 import { useSync } from './hooks/useSync';
 import { useSwUpdate } from './hooks/useSwUpdate';
 import { useToast } from './components/ui/toast-context';
@@ -74,12 +75,19 @@ export default function App() {
   const [shortcuts, setShortcuts] = useState<{ instant: boolean } | null>(null);
   const [view, setView] = useState<View>('notes');
 
-  const { token, email, signIn, signOut } = useAuth();
+  const { token, email, signIn, signOut, tier, isAdmin } = useAuth();
+  const {
+    forNote: attachmentsForNote, add: addAttachment, drop: dropAttachment,
+    applyAttachmentSync, clearAttachments,
+  } = useAttachments();
 
   const handleUnauthorized = useCallback(() => {
     signOut();
+    // The attachment mirror is derived data about files behind an account, so it goes
+    // with the token. Every local NOTE stays — that promise is unchanged.
+    clearAttachments();
     toast('نشست منقضی شد؛ دوباره وارد شوید');
-  }, [signOut, toast]);
+  }, [signOut, clearAttachments, toast]);
 
   const { state: syncState, settingsState, sync } = useSync({
     token,
@@ -90,6 +98,7 @@ export default function App() {
     groups,
     applyGroupSync,
     applySync,
+    applyAttachmentSync,
     onUnauthorized: handleUnauthorized,
   });
 
@@ -208,6 +217,10 @@ export default function App() {
               onSetGroup={setGroup}
               settings={settings}
               token={token}
+              tier={tier}
+              attachments={attachmentsForNote(activeNote.id)}
+              onAttachmentAdded={addAttachment}
+              onAttachmentRemoved={dropAttachment}
               onOpenSettings={() => { setSettingsInstant(false); setSettingsOpen(true); }}
             />
           ) : (
@@ -266,7 +279,7 @@ export default function App() {
           pending={notes.filter(n => n.dirty).length}
           onSync={() => void sync()}
           onSignIn={() => setAuthOpen(true)}
-          onSignOut={signOut}
+          onSignOut={() => { signOut(); clearAttachments(); }}
         />
       </Navbar>
 
@@ -299,12 +312,14 @@ export default function App() {
             onUpdateAi={updateAi}
             email={email}
             token={token}
+            tier={tier}
+            isAdmin={isAdmin}
             syncState={syncState}
             settingsState={settingsState}
             pending={notes.filter(n => n.dirty).length}
             onSync={() => void sync()}
             onSignIn={() => { setSettingsOpen(false); setAuthOpen(true); }}
-            onSignOut={signOut}
+            onSignOut={() => { signOut(); clearAttachments(); }}
             onClose={() => setSettingsOpen(false)}
             onOpenShortcuts={() => setShortcuts({ instant: false })}
             instant={settingsInstant}

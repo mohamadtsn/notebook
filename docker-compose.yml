@@ -15,6 +15,9 @@ services:
       # Required — the server refuses to boot without it. See .env.example.
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      # Email allowlists. Unset => nobody is pro and nobody is an admin.
+      PRO_EMAILS: ${PRO_EMAILS:-}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       # The AI proxy reads its provider config only from here — the client can never
       # supply a base URL (SSRF). Unset => /ai/complete answers 503, and the settings
       # panel has nothing to offer a signed-in user in «سرور» mode.

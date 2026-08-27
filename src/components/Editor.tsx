@@ -12,10 +12,12 @@ import { isCoarsePointer } from '../utils/device';
 import { EditorToolbar, type EditorMode } from './EditorToolbar';
 import { EditorContextMenu } from './EditorContextMenu';
 import { AiResult } from './AiResult';
+import { Attachments } from './Attachments';
 import { useToast } from './ui/toast-context';
 import type { AiTask } from '../utils/aiCache';
 import type { Settings } from '../types/settings';
 import type { CodeEditorHandle } from './CodeEditor';
+import type { Attachment, WireAttachment } from '../types/attachment';
 
 // Lazily imported so the CodeMirror chunk is downloaded only by users who turn the
 // experimental editor on. Everyone else never pays for it.
@@ -34,6 +36,12 @@ interface EditorProps {
   onSetGroup: (id: string, groupId: string | null) => void;
   settings: Settings;
   token: string | null;
+  /** The account's tier as the server reports it; `free` while signed out. */
+  tier: 'free' | 'pro';
+  /** This note's files. Empty and unused unless the strip is rendered. */
+  attachments: Attachment[];
+  onAttachmentAdded: (wire: WireAttachment) => void;
+  onAttachmentRemoved: (id: string) => void;
   onOpenSettings: () => void;
 }
 
@@ -78,6 +86,10 @@ export function Editor({
   onSetGroup,
   settings,
   token,
+  tier,
+  attachments,
+  onAttachmentAdded,
+  onAttachmentRemoved,
   onOpenSettings,
 }: EditorProps) {
   const [title, setTitle] = useState(note.title);
@@ -100,6 +112,10 @@ export function Editor({
   const cmRef = useRef<CodeEditorHandle | null>(null);
   const advanced = settings.experimentalEditor;
   const coarse = isCoarsePointer();
+
+  // «مستقیم» mode spends the user's own key on their own device — gating it would be
+  // gating something we do not pay for. Only the proxy is behind the tier.
+  const aiEnabled = settings.ai.mode === 'direct' || tier === 'pro';
 
   /**
    * Whether the body currently holds a range. Only ever used to decide whether the
@@ -427,6 +443,21 @@ export function Editor({
             className={`w-full resize-none overflow-hidden border-none bg-transparent py-3 text-base leading-[1.8] text-ink outline-none placeholder:text-muted disabled:opacity-60 ${gutter}`}
           />
         )}
+
+        {/* Absent, not disabled, without a pro token — the app is simply the app it was
+            before attachments existed. PRODUCT.md principle 1. */}
+        {token && tier === 'pro' && (
+          <div className={gutter}>
+            <Attachments
+              noteId={note.id}
+              token={token}
+              attachments={attachments}
+              onAdded={onAttachmentAdded}
+              onRemoved={onAttachmentRemoved}
+              readOnly={isTrash}
+            />
+          </div>
+        )}
       </div>
 
       {menu && (
@@ -439,6 +470,7 @@ export function Editor({
           groups={groups}
           currentGroupId={note.groupId}
           onReplace={replaceRange}
+          aiEnabled={aiEnabled}
           onAi={task => setAi({
             x: menu.x, y: menu.y, task,
             text: menu.value.slice(menu.from, menu.to),

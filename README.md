@@ -142,6 +142,34 @@ still use «مستقیم» mode, where their own key stays in their own browser 
 key, the model and the base URL are **only** ever read from this file: the endpoint takes none of
 them from the client, because a client-supplied base URL would turn the server into an SSRF proxy.
 
+Two email allowlists decide who gets what. Both are comma-separated, and **empty means nobody**:
+
+```dotenv
+PRO_EMAILS=you@example.com,teammate@example.com
+ADMIN_EMAILS=you@example.com
+```
+
+`PRO_EMAILS` seeds an account to the `pro` tier on register and at every login, so adding an
+address takes effect the next time that person signs in — no manual database edit. The AI proxy is
+behind that tier; «مستقیم» mode is not, because that key is the user's own.
+
+`ADMIN_EMAILS` reveals a «مدیریت کاربران» section inside Settings and is what `/admin/*` checks, on
+every request, straight from this file. It is never a token claim and never a database column, so a
+promotion or a revocation takes effect immediately rather than when a 30-day token expires. From
+that panel an admin can change a tier, disable an account (which signs it out everywhere on its
+next request and keeps every local note), or force a sign-out. An admin cannot demote or disable
+themselves — that is what would leave nobody able to undo it.
+
+**File attachments** are behind the same `pro` tier. The bytes live in `./data/attachments/<user>/`
+— beside the SQLite file, on the same host bind mount, for the same reason: they are real files no
+docker command can wipe. The database stores metadata only. Limits are enforced server-side (the
+client's copies are UX, not security): **10 MB per file, 200 MB per account, 20 files per note**,
+and a MIME **allowlist** — images, PDF, plain text, zip and common office formats. Anything else is
+a 415. `text/html` and SVG are deliberately absent, and every download is served
+`Content-Disposition: attachment` with `nosniff`, so a stored file can never render as a page in
+this origin. The file on disk is named by a uuid; the original filename is metadata and is never
+used as a path. Attachments need the network — there is no offline blob cache in this version.
+
 ### 2. Build the frontend
 
 Create `./dist` yourself first. Both bind-mounted directories follow the same rule: if Docker has to
@@ -283,5 +311,5 @@ dist/           build output (gitignored)
 ## Docs
 
 - `DESIGN.md` — the design system. Every visual, layout, and motion decision comes from a token here.
-- `PLAN-V2.md` — current roadmap.
+
 - `CLAUDE.md` — architecture notes and invariants.

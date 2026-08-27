@@ -4,6 +4,7 @@ import { toWire } from '../types/note';
 import type { Settings, WireSettings } from '../types/settings';
 import { toWireSettings } from '../types/settings';
 import type { Group, WireGroup } from '../types/group';
+import type { WireAttachment } from '../types/attachment';
 import { toWireGroup } from '../types/group';
 import { ApiError, api } from '../utils/api';
 import { getItem, setItem } from '../utils/storage';
@@ -29,6 +30,8 @@ interface SyncOptions {
     pushed: { id: string; updatedAt: number }[];
     serverTime: number;
   }) => void;
+  /** Pull-only: nothing local is ever dirty, so there is no `pushed` to reconcile. */
+  applyAttachmentSync: (args: { remote: WireAttachment[]; serverTime: number }) => void;
   onUnauthorized: () => void;
 }
 
@@ -39,7 +42,7 @@ interface SyncOptions {
  */
 export function useSync({
   token, notes, intervalMs, settings, applyRemoteSettings, groups, applyGroupSync,
-  applySync, onUnauthorized,
+  applySync, applyAttachmentSync, onUnauthorized,
 }: SyncOptions) {
   const [state, setState] = useState<SyncState>('idle');
   const [settingsState, setSettingsState] = useState<SyncState>('idle');
@@ -48,11 +51,13 @@ export function useSync({
   // registered once instead of re-subscribing on every keystroke. `settings` belongs
   // here for the same reason: it changes on every preference edit.
   const latest = useRef({
-    token, notes, settings, applyRemoteSettings, groups, applyGroupSync, applySync, onUnauthorized,
+    token, notes, settings, applyRemoteSettings, groups, applyGroupSync, applySync,
+    applyAttachmentSync, onUnauthorized,
   });
   useEffect(() => {
     latest.current = {
-      token, notes, settings, applyRemoteSettings, groups, applyGroupSync, applySync, onUnauthorized,
+      token, notes, settings, applyRemoteSettings, groups, applyGroupSync, applySync,
+      applyAttachmentSync, onUnauthorized,
     };
   });
   const running = useRef(false);
@@ -61,6 +66,7 @@ export function useSync({
     const {
       token: t, notes: current, groups: currentGroups,
       applySync: apply, applyGroupSync: applyGroups,
+      applyAttachmentSync: applyAttachments,
     } = latest.current;
     if (!t || running.current) return;
     if (!navigator.onLine) {
@@ -88,12 +94,16 @@ export function useSync({
       }
 
       const since = getItem<number>(LAST_PULL_KEY, 0);
-      const { notes: remote, groups: remoteGroups, serverTime } = await api.pull(t, since);
+      const {
+        notes: remote, groups: remoteGroups, attachments: remoteAttachments, serverTime,
+      } = await api.pull(t, since);
       // Groups first: the note merge that follows may reference a group that only just
       // arrived, and a note pointing at a group the UI has not seen yet renders as
       // «بدون گروه» for one frame.
       applyGroups({ remote: remoteGroups ?? [], pushed: pushedGroups, serverTime });
       apply({ remote, pushed, serverTime });
+      // `?? []` for the same reason groups has one: an older server predates the field.
+      applyAttachments({ remote: remoteAttachments ?? [], serverTime });
       setItem(LAST_PULL_KEY, serverTime);
 
       // Settings ride the same cycle but report separately: notes are the user's data,
