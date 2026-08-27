@@ -1,6 +1,7 @@
 import { ClipboardPaste, Copy, Languages, Scissors, Sparkles } from 'lucide-react';
 import type { Group } from '../types/group';
 import type { AiTask } from '../utils/aiCache';
+import { isCoarsePointer } from '../utils/device';
 import { ContextMenu } from './ui/ContextMenu';
 import { PopoverItem } from './ui/Popover';
 import { MoveToGroup } from './MoveToGroup';
@@ -25,13 +26,21 @@ interface EditorContextMenuProps {
   onReplace: (from: number, to: number, text: string) => void;
   onMove: (groupId: string | null) => void;
   onAi: (task: AiTask) => void;
+  /**
+   * False hides the AI rows outright rather than disabling them. An affordance that
+   * cannot work is worse than an absent one (DESIGN.md §6), and with no upgraded account
+   * the app is simply the app it was before AI existed — degradation, not a broken
+   * feature. «مستقیم» mode is never gated: that key is the user's own.
+   */
+  aiEnabled: boolean;
   onClose: () => void;
   /** Passed through: only a keyboard-opened menu takes focus. See ContextMenu. */
   autoFocus?: boolean;
 }
 
 export function EditorContextMenu({
-  x, y, value, from, to, groups, currentGroupId, onReplace, onMove, onAi, onClose, autoFocus,
+  x, y, value, from, to, groups, currentGroupId, onReplace, onMove, onAi, aiEnabled,
+  onClose, autoFocus,
 }: EditorContextMenuProps) {
   const selected = value.slice(from, to);
 
@@ -74,7 +83,7 @@ export function EditorContextMenu({
 
       {/* Only with a selection: these act ON the selection, and an action that cannot
           work should not be offered. DESIGN.md §6. */}
-      {selected && (
+      {selected && aiEnabled && (
         <div className="border-b border-separator py-1">
           <p className="px-3 py-1 text-[.6875rem] text-muted">هوش مصنوعی</p>
           <PopoverItem onClick={() => { onAi('improve'); onClose(); }}>
@@ -95,9 +104,13 @@ export function EditorContextMenu({
         />
       </div>
 
-      <p className="border-t border-separator px-3 pt-2 pb-1 text-[.6875rem] leading-relaxed text-muted">
-        برای منوی مرورگر، Shift + کلیک راست
-      </p>
+      {/* Advice for a keyboard and a mouse. On a phone there is neither, and the
+          platform's own callout is reached by long-pressing the text directly. */}
+      {!isCoarsePointer() && (
+        <p className="border-t border-separator px-3 pt-2 pb-1 text-[.6875rem] leading-relaxed text-muted">
+          برای منوی مرورگر، Shift + کلیک راست
+        </p>
+      )}
     </ContextMenu>
   );
 }

@@ -27,6 +27,7 @@ const MESSAGES: Record<string, string> = {
   unauthorized: 'نشست منقضی شده است؛ دوباره وارد شوید.',
   provider: 'سرویس پاسخ نداد.',
   input: 'متن انتخاب‌شده برای این کار مناسب نیست.',
+  tier_required: 'حساب شما به حالت «سرور» دسترسی ندارد؛ می‌توانید حالت «مستقیم» را انتخاب کنید.',
 };
 
 export function AiResult({

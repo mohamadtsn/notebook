@@ -1,5 +1,5 @@
 import {
-  Download, MoreHorizontal, Pilcrow, PilcrowLeft, PilcrowRight, Pin, Trash2, Undo2,
+  Download, MoreHorizontal, Pilcrow, PilcrowLeft, PilcrowRight, Pin, TextSelect, Trash2, Undo2,
 } from 'lucide-react';
 import type { Note, NoteColor, NoteDir } from '../types/note';
 import { NOTE_COLORS, NOTE_COLOR_LABEL, NOTE_DIRS, NOTE_DIR_LABEL, noteColorVar } from '../types/note';
@@ -25,6 +25,13 @@ interface EditorToolbarProps {
   onTrash: (id: string) => void;
   onRestore: (id: string) => void;
   onPermanentDelete: (id: string) => void;
+  /**
+   * The explicit door to the editor context menu, opened at the button's own rect.
+   * Absent means "do not offer it": on a fine pointer with nothing selected, right-click
+   * already covers this and a permanent extra button would be noise. Editor.tsx owns
+   * that decision — see the comment on `openMenu` for why touch cannot use right-click.
+   */
+  onSelectionMenu?: (x: number, y: number) => void;
 }
 
 const DIR_ICON: Record<NoteDir, typeof Pilcrow> = {
@@ -45,6 +52,7 @@ const MODES: { value: EditorMode; label: string }[] = [
 export function EditorToolbar({
   note, groups, onMove, isTrash, mode, onModeChange,
   onTogglePin, onSetColor, onSetDir, onExport, onTrash, onRestore, onPermanentDelete,
+  onSelectionMenu,
 }: EditorToolbarProps) {
   const DirIcon = DIR_ICON[note.dir];
   return (
@@ -55,6 +63,20 @@ export function EditorToolbar({
         onChange={onModeChange}
         label="حالت ویرایشگر"
       />
+
+      {onSelectionMenu && (
+        <IconButton
+          label="عملیات متن"
+          onClick={e => {
+            const r = e.currentTarget.getBoundingClientRect();
+            // Under the button; ContextMenu clamps to the viewport from there, so this
+            // needs no inline-side handling of its own.
+            onSelectionMenu(r.left, r.bottom + 6);
+          }}
+        >
+          <TextSelect size={16} />
+        </IconButton>
+      )}
 
       {isTrash ? (
         <>

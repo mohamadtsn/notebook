@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { hash, verify } from '@node-rs/argon2';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Db } from './db.ts';
+import { isAdminEmail, seedTier, type Tier } from './tiers.ts';
 
 const MIN_PASSWORD = 8;
 /** Matches the token's `expiresIn`. A row past this can never authenticate again. */
@@ -51,17 +52,33 @@ export function sessionId(req: FastifyRequest): string | undefined {
  * grandfathered: accepting it would leave a 30-day window in which «خروج از این دستگاه»
  * silently does nothing, which is worse than asking everyone to sign in once more.
  * Signing out keeps every local note, so nobody loses data over it.
+ *
+ * `users.disabled` is enforced here and nowhere else. This is the one choke point every
+ * authenticated request already passes through, so a flag here disables the account
+ * everywhere at once — including the route somebody adds next month and forgets to
+ * guard. A disabled account's session rows are dropped on the way past, so its other
+ * devices stop too rather than waiting to be noticed one request at a time.
  */
 export function sessionGuard(db: Db) {
-  const find = db.prepare('SELECT last_seen_at FROM sessions WHERE id = ? AND user_id = ?');
+  const find = db.prepare(`
+    SELECT s.last_seen_at, u.disabled
+    FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.id = ? AND s.user_id = ?
+  `);
   const touch = db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?');
+  const dropAll = db.prepare('DELETE FROM sessions WHERE user_id = ?');
 
   return (req: FastifyRequest): boolean => {
     const jti = sessionId(req);
     if (!jti) return false;
 
-    const row = find.get(jti, userId(req)) as { last_seen_at: number } | undefined;
+    const uid = userId(req);
+    const row = find.get(jti, uid) as { last_seen_at: number; disabled: number } | undefined;
     if (!row) return false;
+    if (row.disabled) {
+      dropAll.run(uid);
+      return false;
+    }
 
     const now = Date.now();
     if (now - row.last_seen_at > TOUCH_AFTER_MS) touch.run(now, jti);
@@ -74,7 +91,7 @@ export async function authRoutes(app: FastifyInstance, db: Db) {
     'INSERT INTO users (id, email, password, created_at) VALUES (?, ?, ?, ?)',
   );
   const findUser = db.prepare('SELECT id, email, password FROM users WHERE email = ?');
-  const findById = db.prepare('SELECT id, email FROM users WHERE id = ?');
+  const findById = db.prepare('SELECT id, email, tier FROM users WHERE id = ?');
 
   const insertSession = db.prepare(
     'INSERT INTO sessions (id, user_id, created_at, last_seen_at, user_agent) VALUES (?, ?, ?, ?, ?)',
@@ -114,6 +131,7 @@ export async function authRoutes(app: FastifyInstance, db: Db) {
 
     const id = randomUUID();
     insertUser.run(id, normalized, await hash(password), Date.now());
+    seedTier(db, { id, email: normalized });
     return { token: issue({ id, email: normalized }, req) };
   });
 
@@ -125,11 +143,22 @@ export async function authRoutes(app: FastifyInstance, db: Db) {
     if (!user || !(await verify(user.password, password))) {
       return reply.code(401).send({ error: 'invalid credentials' });
     }
+    // Re-seeded on every login so an address added to PRO_EMAILS takes effect at the
+    // next sign-in, with no manual DB edit. tiers.ts explains what it will not undo.
+    seedTier(db, user);
     return { token: issue(user, req) };
   });
 
+  /**
+   * `isAdmin` is derived from ADMIN_EMAILS at request time and is deliberately NOT a
+   * token claim: a token minted before a promotion — or before a revocation — would
+   * otherwise carry stale authority for the thirty days it stays valid.
+   */
   app.get('/auth/me', { onRequest: [app.authenticate] }, async req => {
-    return findById.get(userId(req));
+    const user = findById.get(userId(req)) as
+      { id: string; email: string; tier: Tier } | undefined;
+    if (!user) return null;
+    return { ...user, isAdmin: isAdminEmail(user.email) };
   });
 
   /**

@@ -8,13 +8,16 @@ import { useDebounce } from '../hooks/useDebounce';
 import { useHistory } from '../hooks/useHistory';
 import { useTextDirection } from '../hooks/useTextDirection';
 import { renderMarkdown } from '../utils/markdown';
+import { isCoarsePointer } from '../utils/device';
 import { EditorToolbar, type EditorMode } from './EditorToolbar';
 import { EditorContextMenu } from './EditorContextMenu';
 import { AiResult } from './AiResult';
+import { Attachments } from './Attachments';
 import { useToast } from './ui/toast-context';
 import type { AiTask } from '../utils/aiCache';
 import type { Settings } from '../types/settings';
 import type { CodeEditorHandle } from './CodeEditor';
+import type { Attachment, WireAttachment } from '../types/attachment';
 
 // Lazily imported so the CodeMirror chunk is downloaded only by users who turn the
 // experimental editor on. Everyone else never pays for it.
@@ -33,6 +36,12 @@ interface EditorProps {
   onSetGroup: (id: string, groupId: string | null) => void;
   settings: Settings;
   token: string | null;
+  /** The account's tier as the server reports it; `free` while signed out. */
+  tier: 'free' | 'pro';
+  /** This note's files. Empty and unused unless the strip is rendered. */
+  attachments: Attachment[];
+  onAttachmentAdded: (wire: WireAttachment) => void;
+  onAttachmentRemoved: (id: string) => void;
   onOpenSettings: () => void;
 }
 
@@ -77,6 +86,10 @@ export function Editor({
   onSetGroup,
   settings,
   token,
+  tier,
+  attachments,
+  onAttachmentAdded,
+  onAttachmentRemoved,
   onOpenSettings,
 }: EditorProps) {
   const [title, setTitle] = useState(note.title);
@@ -98,6 +111,34 @@ export function Editor({
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const cmRef = useRef<CodeEditorHandle | null>(null);
   const advanced = settings.experimentalEditor;
+  const coarse = isCoarsePointer();
+
+  // «مستقیم» mode spends the user's own key on their own device — gating it would be
+  // gating something we do not pay for. Only the proxy is behind the tier.
+  const aiEnabled = settings.ai.mode === 'direct' || tier === 'pro';
+
+  /**
+   * Whether the body currently holds a range. Only ever used to decide whether the
+   * toolbar's selection button is offered — the menu itself still reads the selection
+   * at the moment it opens, because that is the value the actions must act on.
+   */
+  const [hasSelection, setHasSelection] = useState(false);
+  useEffect(() => {
+    // One document-level listener covers both bodies: a `<textarea>` reports its own
+    // selection changes here, and CodeMirror's contenteditable moves the document
+    // selection. Neither needs debouncing — this only flips a boolean.
+    const read = () => {
+      const sel = advanced
+        ? cmRef.current?.selection()
+        : bodyRef.current && {
+            from: bodyRef.current.selectionStart,
+            to: bodyRef.current.selectionEnd,
+          };
+      setHasSelection(!!sel && sel.from !== sel.to);
+    };
+    document.addEventListener('selectionchange', read);
+    return () => document.removeEventListener('selectionchange', read);
+  }, [advanced]);
 
   // Undo history outlives this component: it is keyed by note id and persisted, so it
   // survives note switches, the preview toggle, and a reload. See utils/history.ts.
@@ -176,13 +217,37 @@ export function Editor({
    * Shift passes straight through to the browser's own menu — Persian spellcheck
    * suggestions live there and taking them away is a regression, not a redesign.
    * The same applies wherever the menu's actions cannot apply: preview and trash.
+   *
+   * On a coarse pointer this bails entirely, `preventDefault` included. The long press
+   * is how the platform selects text, and Chrome fires `contextmenu` when that timer
+   * elapses — before the selection handles settle, so the range read here is a bare
+   * caret — while suppressing the default takes away the OS callout that carries
+   * select-all, paste and the handles themselves. There is no Shift key on a phone to
+   * get any of it back. The toolbar button below is the door instead.
    */
   const openMenu = (e: React.MouseEvent) => {
+    if (coarse) return;
     if (e.shiftKey || isTrash || mode === 'preview') return;
     const el = bodyRef.current;
     if (!el) return;
     e.preventDefault();
     openMenuAt(e.clientX, e.clientY, el);
+  };
+
+  /**
+   * The toolbar's selection button. Anchored under its own rect, and — the point of the
+   * whole detour — the selection is read *now*, on an explicit tap, by which time the
+   * platform's handles have long since settled.
+   */
+  const openSelectionMenu = (x: number, y: number) => {
+    if (isTrash || mode === 'preview') return;
+    if (advanced) {
+      const sel = cmRef.current?.selection();
+      if (sel) setMenu({ x, y, keyboard: false, ...sel });
+      return;
+    }
+    const el = bodyRef.current;
+    if (el) openMenuAt(x, y, el);
   };
 
   /** Shift+F10 / the Menu key, anchored to the textarea. DESIGN.md §6, §8. */
@@ -283,6 +348,9 @@ export function Editor({
           onTrash={onTrash}
           onRestore={onRestore}
           onPermanentDelete={onPermanentDelete}
+          onSelectionMenu={!isTrash && mode === 'write' && (coarse || hasSelection)
+            ? openSelectionMenu
+            : undefined}
         />
       </div>
 
@@ -375,6 +443,21 @@ export function Editor({
             className={`w-full resize-none overflow-hidden border-none bg-transparent py-3 text-base leading-[1.8] text-ink outline-none placeholder:text-muted disabled:opacity-60 ${gutter}`}
           />
         )}
+
+        {/* Absent, not disabled, without a pro token — the app is simply the app it was
+            before attachments existed. PRODUCT.md principle 1. */}
+        {token && tier === 'pro' && (
+          <div className={gutter}>
+            <Attachments
+              noteId={note.id}
+              token={token}
+              attachments={attachments}
+              onAdded={onAttachmentAdded}
+              onRemoved={onAttachmentRemoved}
+              readOnly={isTrash}
+            />
+          </div>
+        )}
       </div>
 
       {menu && (
@@ -387,6 +470,7 @@ export function Editor({
           groups={groups}
           currentGroupId={note.groupId}
           onReplace={replaceRange}
+          aiEnabled={aiEnabled}
           onAi={task => setAi({
             x: menu.x, y: menu.y, task,
             text: menu.value.slice(menu.from, menu.to),

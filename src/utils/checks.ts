@@ -27,6 +27,9 @@ const { renderMarkdown } = await import('./markdown.ts');
 import { clearPushed, mergeById, mergeNotes } from './merge.ts';
 import { DEFAULT_SETTINGS, migrateSettings, toWireSettings } from '../types/settings.ts';
 import { toWireGroup, orderBetween } from '../types/group.ts';
+import {
+  formatBytes, migrateAttachments, toWireAttachment, type Attachment, type WireAttachment,
+} from '../types/attachment.ts';
 import type { Group } from '../types/group.ts';
 
 // ── Note label migration (PLAN-V2 Phase 1.3) ────────────────────────
@@ -235,6 +238,54 @@ assert.equal(clearPushed([note({ dirty: true })], [{ id: 'n', updatedAt: 100 }],
 assert.equal(clearPushed([note({ dirty: true, updatedAt: 150 })], [{ id: 'n', updatedAt: 100 }], 7)[0].dirty, true);
 // Rejected by the server (absent from `pushed`) → still dirty
 assert.equal(clearPushed([note({ dirty: true })], [], 7)[0].dirty, true);
+
+// ── Attachments (v5 Phase 2) ────────────────────────────────────────
+// An attachment's bytes are immutable once uploaded, so the only update that can ever
+// arrive is a tombstone — last-write-wins collapses to "tombstone wins". The client
+// holds no dirty attachments (upload and delete are both server round trips), so
+// `mergeById` is the whole rule and these assertions pin that it behaves that way.
+const att = (over: Partial<Attachment> = {}): Attachment => ({
+  id: 'a1', noteId: 'n1', name: 'گزارش.pdf', mime: 'application/pdf', size: 1024,
+  createdAt: 100, updatedAt: 100, deletedAt: null, dirty: false, syncedAt: null,
+  ...over,
+});
+const attWire = (over: Partial<Attachment> = {}): WireAttachment => toWireAttachment(att(over));
+
+// toWire lists its fields: a local-only key must not reach a push, ever.
+assert.deepEqual(Object.keys(toWireAttachment(att({ dirty: true, syncedAt: 9 }))).sort(), [
+  'createdAt', 'deletedAt', 'id', 'mime', 'name', 'noteId', 'size', 'updatedAt',
+]);
+
+// A remote tombstone replaces a live local row — this is the whole merge rule.
+const killed = mergeById<Attachment>(
+  [att()],
+  [attWire({ updatedAt: 200, deletedAt: 200 })],
+  500,
+);
+assert.ok(killed[0].deletedAt, 'a remote tombstone must win');
+assert.equal(killed[0].syncedAt, 500);
+
+// …and it never resurrects: the tombstone is newer than the row it replaced, so a
+// later pull carrying the original row again loses on updatedAt.
+assert.ok(
+  mergeById<Attachment>(killed, [attWire()], 600)[0].deletedAt,
+  'a stale live row resurrected a deleted attachment',
+);
+
+// An attachment the device has never seen is added.
+assert.equal(mergeById<Attachment>([], [attWire({ id: 'new' })], 1).length, 1);
+
+// Migration fills the fields an older stored row cannot have had.
+const migrated = migrateAttachments([
+  { id: 'a', noteId: 'n', name: 'x', mime: 'text/plain', size: 1, createdAt: 7 } as Attachment,
+]);
+assert.equal(migrated[0].updatedAt, 7, 'updatedAt must fall back to createdAt, not to 0');
+assert.equal(migrated[0].deletedAt, null);
+assert.equal(migrated[0].dirty, false);
+
+assert.equal(formatBytes(512), '512 بایت');
+assert.equal(formatBytes(2048), '2 کیلوبایت');
+assert.equal(formatBytes(3 * 1024 * 1024), '3.0 مگابایت');
 
 // ── Settings migration (v3 Phase 0.2) ───────────────────────────────
 // Nothing stored yet → every field comes from the defaults.

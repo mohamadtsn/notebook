@@ -4,6 +4,7 @@ import {
   EditorView, keymap, drawSelection, rectangularSelection, placeholder,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyField, historyKeymap } from '@codemirror/commands';
+import { isCoarsePointer } from '../utils/device';
 import { loadCmHistory, saveCmHistory, type CmSnapshot } from '../utils/cmHistory';
 
 /** The serialised fields, named once so save and restore cannot drift apart. */
@@ -93,9 +94,12 @@ export function CodeEditor({
 
     /**
      * Shift passes through to the browser's own menu — Persian spellcheck lives there
-     * (DESIGN.md §6). Same guard as the textarea path.
+     * (DESIGN.md §6). Same guard as the textarea path, coarse-pointer bail included:
+     * on touch the long press is the platform's selection gesture and this event fires
+     * before the handles settle. The toolbar's selection button is the door there.
      */
     const onContextMenu = (e: MouseEvent) => {
+      if (isCoarsePointer()) return;
       if (e.shiftKey || disabled) return;
       e.preventDefault();
       onMenuRef.current(e.clientX, e.clientY, false);

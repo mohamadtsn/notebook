@@ -21,7 +21,8 @@ export const TARGET_LANGS: { value: string; label: string }[] = [
 ];
 
 export type AiErrorKind =
-  | 'unconfigured' | 'offline' | 'rate_limited' | 'provider' | 'unauthorized' | 'input';
+  | 'unconfigured' | 'offline' | 'rate_limited' | 'provider' | 'unauthorized' | 'input'
+  | 'tier_required';
 
 export class AiError extends Error {
   kind: AiErrorKind;
@@ -74,6 +75,9 @@ async function viaProxy(task: AiTask, text: string, targetLang: string, token: s
     body: JSON.stringify({ task, text, targetLang }),
   });
   if (res.status === 401) throw new AiError('unauthorized', 'نشست منقضی شده است');
+  // The menu already hides the AI rows for a free account. This is the race: a tier
+  // revoked while the panel was open. «تنظیم نشده» would be the wrong thing to say.
+  if (res.status === 403) throw new AiError('tier_required', 'حساب شما به این حالت دسترسی ندارد');
   if (res.status === 429) throw new AiError('rate_limited', 'سقف درخواست‌ها پر شده است');
   if (res.status === 503) throw new AiError('unconfigured', 'سرور برای هوش مصنوعی تنظیم نشده است');
   if (!res.ok) throw new AiError('provider', `AI ${res.status}`);

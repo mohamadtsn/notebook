@@ -72,7 +72,9 @@ export async function aiRoutes(app: FastifyInstance, db: Db, provider?: Provider
   `);
 
   app.post('/ai/complete', {
-    onRequest: [app.authenticate],
+    // The proxy spends the server's own API key, so it is the one thing behind the tier.
+    // «مستقیم» mode is untouched: it uses the user's own key and never reaches here.
+    onRequest: [app.authenticate, app.requirePro],
     // The per-minute limit rides the global @fastify/rate-limit plugin; see index.ts,
     // where /ai/ is removed from its allowList so this config is honoured.
     config: { rateLimit: { max: 20, timeWindow: '1 minute' } },

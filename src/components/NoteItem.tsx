@@ -1,5 +1,7 @@
+import { useRef } from 'react';
 import { motion } from 'motion/react';
 import { Pin } from 'lucide-react';
+import { useLongPress } from '../hooks/useLongPress';
 import { springDrag } from '../lib/motion';
 import type { Note } from '../types/note';
 import { noteColorVar } from '../types/note';
@@ -14,7 +16,10 @@ interface NoteItemProps {
   draggable?: boolean;
   onDragToGroup?: (groupId: string | null) => void;
   onDragHover?: (groupId: string | null) => void;
-  /** Pointer coordinates. Shift+right-click is already filtered out by the row. */
+  /**
+   * Pointer coordinates. Two doors, one handler: right-click on a mouse, long press on
+   * touch. Shift+right-click is already filtered out by the row.
+   */
   onContextMenu?: (x: number, y: number) => void;
   /**
    * Set only in the «همه» view, where the row is the only place the group is visible.
@@ -39,6 +44,13 @@ function formatTime(ms: number): string {
 export function NoteItem({
   note, isActive, onClick, draggable = false, onDragToGroup, onDragHover, onContextMenu, group,
 }: NoteItemProps) {
+  // The long press belongs to us on a row — no text selection is involved here, so
+  // nothing of the platform's is being taken away. In the editor body the opposite is
+  // true and the long press stays the OS's; see Editor.tsx.
+  const longPress = useLongPress((x, y) => onContextMenu?.(x, y));
+  // `contextmenu` carries no pointerType, so the press that produced it is recorded.
+  const fromMouse = useRef(true);
+
   const title = note.title.trim() || 'یادداشت بدون عنوان';
   const preview = note.body.trim();
 
@@ -66,13 +78,21 @@ export function NoteItem({
         onDragHover?.(null);
         if (target !== null) onDragToGroup?.(target === '__none__' ? null : target);
       }}
+      {...longPress}
+      onPointerDownCapture={e => { fromMouse.current = e.pointerType === 'mouse'; }}
       // Shift passes through to the browser's own menu, same rule as the editor.
+      // On touch, Chrome fires this too as the long-press timer elapses — the hook has
+      // already opened our menu by then, so this only suppresses the native one that
+      // would otherwise stack on top of it.
       onContextMenu={e => {
         if (!onContextMenu || e.shiftKey) return;
         e.preventDefault();
+        if (!fromMouse.current) return;
         onContextMenu(e.clientX, e.clientY);
       }}
-      className="relative"
+      // iOS raises its own callout over a long-pressed row and would sit on top of ours.
+      // Only the row: the editor body needs both of these left alone.
+      className="relative select-none [-webkit-touch-callout:none]"
     >
     <button
       onClick={onClick}
