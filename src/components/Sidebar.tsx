@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ArrowDownAZ, Clock, History, Search, Trash2 } from 'lucide-react';
+import { useMemo, useRef, useState, type RefObject } from 'react';
+import { ArrowDownAZ, Clock, History, Search, Trash2, X } from 'lucide-react';
 import type { Note } from '../types/note';
 import type { Group, GroupFilter } from '../types/group';
 import { NoteItem } from './NoteItem';
@@ -8,6 +8,8 @@ import { GroupStrip } from './GroupStrip';
 import { IconButton } from './ui/IconButton';
 import { cx } from './ui/cx';
 import { getItem, setItem } from '../utils/storage';
+import { searchNotes } from '../utils/search';
+import { useTextDirection } from '../hooks/useTextDirection';
 
 type SortOrder = 'newest' | 'oldest' | 'alpha';
 type View = 'notes' | 'trash';
@@ -34,7 +36,11 @@ interface SidebarProps {
   view: View;
   onViewChange: (v: View) => void;
   onSelect: (id: string) => void;
+  onSelectSearchResult?: (id: string, query: string) => void;
   onOpenSearch: () => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
+  searchInputRef?: RefObject<HTMLInputElement | null>;
   groups: Group[];
   groupCounts: Map<GroupFilter, number>;
   selectedGroup: GroupFilter;
@@ -50,10 +56,21 @@ interface SidebarProps {
 }
 
 export function Sidebar({
-  notes, trashedNotes, activeNoteId, view, onViewChange, onSelect, onOpenSearch,
+  notes, trashedNotes, activeNoteId, view, onViewChange, onSelect, onSelectSearchResult,
+  onOpenSearch, searchQuery: controlledQuery, onSearchQueryChange, searchInputRef,
   groups, groupCounts, selectedGroup, onSelectGroup, onCreateGroup, onRenameGroup, onDeleteGroup,
   onMoveNote, onTogglePin, onTrashNote, onRestoreNote, onPermanentDelete,
 }: SidebarProps) {
+  const [localQuery, setLocalQuery] = useState('');
+  const fallbackInputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = searchInputRef ?? fallbackInputRef;
+
+  const query = controlledQuery ?? localQuery;
+  const setQuery = onSearchQueryChange ?? setLocalQuery;
+  const trimmedQuery = query.trim();
+  const hasQuery = trimmedQuery.length > 0;
+  const queryDir = useTextDirection(query);
+
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   // One row menu at a time; the row it belongs to is carried with the coordinates so
   // the menu keeps showing the right actions while the list re-sorts underneath it.
@@ -73,27 +90,63 @@ export function Sidebar({
   const current = SORTS.find(s => s.value === sort) ?? SORTS[0];
   const SortIcon = current.icon;
 
+  const allGroupsMap = useMemo(() => new Map(groups.map(g => [g.id, g])), [groups]);
+
   const source = view === 'notes' ? notes : trashedNotes;
   // Trash is a flat view: a trashed note's group is not what the user is looking for there.
-  const filtered =
-    view === 'trash' || selectedGroup === 'all'
-      ? source
-      : source.filter(n => (n.groupId ?? null) === selectedGroup);
+  const filtered = useMemo(
+    () => (
+      view === 'trash' || selectedGroup === 'all'
+        ? source
+        : source.filter(n => (n.groupId ?? null) === selectedGroup)
+    ),
+    [view, selectedGroup, source],
+  );
 
   // Only «همه» shows the badge, and only outside the trash: a trashed note's group is
   // not what anyone is looking for there, and the trash view is flat already.
-  const byId = selectedGroup === 'all' && view === 'notes'
-    ? new Map(groups.map(g => [g.id, g]))
-    : null;
+  const byId = selectedGroup === 'all' && view === 'notes' ? allGroupsMap : null;
 
-  const sorted = [...filtered].sort((a, b) => {
-    // Pinned first, but only where pinning means anything
-    if (view === 'notes') {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
+  const searchResults = useMemo(
+    () => (hasQuery ? searchNotes(filtered, trimmedQuery, allGroupsMap) : []),
+    [hasQuery, filtered, trimmedQuery, allGroupsMap],
+  );
+
+  const searchResultById = useMemo(
+    () => new Map(searchResults.map(r => [r.note.id, r])),
+    [searchResults],
+  );
+
+  // When a user searches inside a specific group and gets 0 matches, check whether matches
+  // exist across all active notes so the empty state can offer a direct 1-tap switch (R-27).
+  const globalMatchCount = useMemo(() => {
+    if (!hasQuery || view !== 'notes' || selectedGroup === 'all' || searchResults.length > 0) {
+      return 0;
     }
-    return compare(a, b, sort);
-  });
+    return searchNotes(notes, trimmedQuery, allGroupsMap).length;
+  }, [hasQuery, view, selectedGroup, searchResults.length, notes, trimmedQuery, allGroupsMap]);
+
+  const displayedNotes = useMemo(() => {
+    if (hasQuery) {
+      return searchResults.map(r => r.note);
+    }
+    return [...filtered].sort((a, b) => {
+      // Pinned first, but only where pinning means anything
+      if (view === 'notes') {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+      }
+      return compare(a, b, sort);
+    });
+  }, [hasQuery, searchResults, filtered, view, sort]);
+
+  const handleRowSelect = (id: string) => {
+    if (hasQuery && onSelectSearchResult) {
+      onSelectSearchResult(id, trimmedQuery);
+    } else {
+      onSelect(id);
+    }
+  };
 
   return (
     // A solid floating card, deliberately *not* glass: the navbar is the glass
@@ -121,39 +174,137 @@ export function Sidebar({
         )}
 
         <div className="flex items-center gap-1 px-3 pb-2 pt-2">
-          {/* Search is the command palette now — this button just opens it */}
-          <button
-            onClick={onOpenSearch}
-            className="flex flex-1 items-center gap-2 rounded-lg bg-fill px-3 py-2 text-start text-sm text-muted transition-colors duration-(--d-fast) hover:text-ink"
+          <div
+            className={cx(
+              'flex min-h-10 flex-1 items-center gap-1.5 rounded-lg bg-fill px-2.5',
+              'transition-[box-shadow,border-color] duration-(--d-fast)',
+              'focus-within:ring-2 focus-within:ring-accent focus-within:shadow-[0_0_0_4px_var(--accent-soft)]',
+            )}
           >
-            <Search size={14} className="shrink-0" />
-            <span className="flex-1">جستجو…</span>
-            <kbd className="shrink-0 font-mono text-[.6875rem] text-muted">Ctrl K</kbd>
-          </button>
+            <Search size={14} className="shrink-0 text-muted" aria-hidden="true" />
+            <input
+              ref={inputRef}
+              type="search"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (query) {
+                    setQuery('');
+                  } else {
+                    e.currentTarget.blur();
+                  }
+                } else if (e.key === 'Enter' && displayedNotes.length > 0) {
+                  e.preventDefault();
+                  handleRowSelect(displayedNotes[0].id);
+                }
+              }}
+              dir={query ? queryDir : 'rtl'}
+              placeholder={view === 'trash' ? 'جستجو در سطل زباله…' : 'جستجو…'}
+              aria-label="جستجو در لیست یادداشت‌ها"
+              className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-ink outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:hidden"
+            />
+            {query ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery('');
+                  inputRef.current?.focus();
+                }}
+                aria-label="پاک کردن جستجو"
+                className="relative flex size-6 shrink-0 items-center justify-center rounded-md text-muted transition-[color,transform] duration-(--d-press) hover:text-ink active:scale-[0.97] after:absolute after:-inset-2 after:content-['']"
+              >
+                <X size={14} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onOpenSearch}
+                aria-label="باز کردن پالت دستورها (Ctrl+K)"
+                title="پالت دستورها (Ctrl+K)"
+                className="relative shrink-0 rounded border border-separator bg-surface/60 px-1.5 py-0.5 font-mono text-[.6875rem] text-muted transition-[color,transform] duration-(--d-press) hover:text-ink active:scale-[0.97] after:absolute after:-inset-2 after:content-['']"
+              >
+                Ctrl K
+              </button>
+            )}
+          </div>
 
           <IconButton label={current.label} onClick={cycleSort}>
             <SortIcon size={16} />
           </IconButton>
         </div>
 
-        {sorted.length === 0 && (
-          <p className="mt-8 px-4 text-center text-sm text-muted">
-            {view === 'trash' ? 'سطل زباله خالی است' : 'هنوز یادداشتی ندارید'}
-          </p>
+        {hasQuery && displayedNotes.length > 0 && (
+          <div
+            aria-live="polite"
+            className="flex items-center justify-between border-b border-separator px-4 pb-1.5 text-[.6875rem] text-muted"
+          >
+            <span>{displayedNotes.length.toLocaleString('fa-IR')} نتیجه</span>
+            {view === 'notes' && selectedGroup !== 'all' && (
+              <button
+                type="button"
+                onClick={() => onSelectGroup('all')}
+                className="text-accent transition-opacity duration-(--d-fast) hover:underline"
+              >
+                جستجو در همه
+              </button>
+            )}
+          </div>
         )}
-        {sorted.map(note => (
+
+        {displayedNotes.length === 0 && (
+          <div className="mt-8 flex flex-col items-center gap-2.5 px-4 text-center">
+            <p className="text-sm text-muted">
+              {hasQuery
+                ? view === 'notes' && selectedGroup !== 'all'
+                  ? 'در این گروه یادداشتی با این عبارت پیدا نشد'
+                  : 'یادداشتی با این عبارت پیدا نشد'
+                : view === 'trash'
+                  ? 'سطل زباله خالی است'
+                  : 'هنوز یادداشتی ندارید'}
+            </p>
+            {hasQuery && (
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {globalMatchCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectGroup('all')}
+                    className="min-h-9 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-on-accent transition-transform duration-(--d-press) active:scale-[0.97]"
+                  >
+                    نمایش {globalMatchCount.toLocaleString('fa-IR')} نتیجه در همهٔ یادداشت‌ها
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery('');
+                    inputRef.current?.focus();
+                  }}
+                  className="min-h-9 rounded-lg bg-fill px-3 py-1.5 text-xs font-medium text-ink-soft transition-[color,transform] duration-(--d-press) hover:text-ink active:scale-[0.97]"
+                >
+                  پاک کردن جستجو
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {displayedNotes.map(note => (
           <NoteItem
             key={note.id}
             note={note}
             isActive={note.id === activeNoteId}
-            onClick={() => onSelect(note.id)}
-            draggable={canDrag && view === 'notes'}
+            onClick={() => handleRowSelect(note.id)}
+            draggable={canDrag && view === 'notes' && !hasQuery}
             onDragHover={setDropTargetId}
             onDragToGroup={groupId => onMoveNote(note.id, groupId)}
             onContextMenu={(x, y) => setMenu({ x, y, note })}
             // `get` on a null groupId misses, and so does a group id that sync has not
             // delivered yet — both correctly render no badge rather than a broken one.
             group={byId?.get(note.groupId ?? '') ?? undefined}
+            searchResult={searchResultById.get(note.id)}
           />
         ))}
       </div>

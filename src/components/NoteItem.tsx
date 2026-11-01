@@ -6,6 +6,8 @@ import { springDrag } from '../lib/motion';
 import type { Note } from '../types/note';
 import { noteColorVar } from '../types/note';
 import type { Group } from '../types/group';
+import type { NoteSearchResult } from '../utils/search';
+import { HighlightText } from './ui/HighlightText';
 import { cx } from './ui/cx';
 
 interface NoteItemProps {
@@ -27,6 +29,8 @@ interface NoteItemProps {
    * nothing at all — «بدون گروه» on half the list is noise, not information.
    */
   group?: Group;
+  /** Present while a sidebar search query is active; supplies match ranges and snippet. */
+  searchResult?: NoteSearchResult;
 }
 
 function formatTime(ms: number): string {
@@ -43,6 +47,7 @@ function formatTime(ms: number): string {
 
 export function NoteItem({
   note, isActive, onClick, draggable = false, onDragToGroup, onDragHover, onContextMenu, group,
+  searchResult,
 }: NoteItemProps) {
   // The long press belongs to us on a row — no text selection is involved here, so
   // nothing of the platform's is being taken away. In the editor body the opposite is
@@ -51,8 +56,10 @@ export function NoteItem({
   // `contextmenu` carries no pointerType, so the press that produced it is recorded.
   const fromMouse = useRef(true);
 
-  const title = note.title.trim() || 'یادداشت بدون عنوان';
+  const hasTitle = note.title.trim().length > 0;
+  const title = hasTitle ? note.title.trim() : 'یادداشت بدون عنوان';
   const preview = note.body.trim();
+  const snippet = searchResult?.snippet;
 
   // Label is a 3px inline-start bar, never a background fill — DESIGN.md §1
   const labelColor = note.color ? noteColorVar(note.color) : null;
@@ -110,15 +117,34 @@ export function NoteItem({
           <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: labelColor }} />
         )}
         <p className={cx('truncate text-[.9375rem] font-medium', isActive ? 'text-ink' : 'text-ink-soft')}>
-          {title}
+          {hasTitle && searchResult ? (
+            <HighlightText text={title} ranges={searchResult.titleMatches} />
+          ) : (
+            title
+          )}
         </p>
       </div>
 
-      {preview && (
-        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted">{preview}</p>
+      {snippet ? (
+        snippet.text && (
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted">
+            {snippet.prefixEllipsis && '…'}
+            <HighlightText text={snippet.text} ranges={snippet.matches} />
+            {snippet.suffixEllipsis && '…'}
+          </p>
+        )
+      ) : (
+        preview && (
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted">{preview}</p>
+        )
       )}
       <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted">
         <span className="shrink-0">{formatTime(note.updatedAt)}</span>
+        {searchResult && searchResult.bodyMatchCount > 0 && (
+          <span className="shrink-0 rounded-full bg-accent-soft px-1.5 py-0.5 text-[.6875rem] font-medium text-accent">
+            {searchResult.bodyMatchCount.toLocaleString('fa-IR')} مورد
+          </span>
+        )}
         {group && (
           // Truncates rather than wraps: the row is a fixed two lines plus this one, and
           // the list is `overflow-x-hidden` — a long group name must not widen it.
