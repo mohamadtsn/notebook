@@ -1,16 +1,46 @@
 import { useEffect, useImperativeHandle, useRef, type RefObject } from 'react';
-import { EditorState } from '@codemirror/state';
+import { EditorState, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import {
-  EditorView, keymap, drawSelection, rectangularSelection, placeholder,
+  Decoration, type DecorationSet, EditorView, keymap, drawSelection, rectangularSelection, placeholder,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyField, historyKeymap } from '@codemirror/commands';
 import { isCoarsePointer } from '../utils/device';
 import { loadCmHistory, saveCmHistory, type CmSnapshot } from '../utils/cmHistory';
+import type { MatchRange } from '../utils/search';
 
 /** The serialised fields, named once so save and restore cannot drift apart. */
 const PERSISTED_FIELDS = { history: historyField };
 /** Writes are batched: serialising the whole undo stack per keystroke is pure waste. */
 const FLUSH_MS = 1000;
+
+const setSearchEffect = StateEffect.define<{ matches: MatchRange[]; activeIndex: number }>();
+const searchMark = Decoration.mark({ class: 'cm-searchMatch' });
+const activeSearchMark = Decoration.mark({ class: 'cm-searchMatch cm-searchMatch-selected' });
+
+const searchHighlightField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none;
+  },
+  update(deco, tr) {
+    deco = deco.map(tr.changes);
+    for (const e of tr.effects) {
+      if (e.is(setSearchEffect)) {
+        const builder = new RangeSetBuilder<Decoration>();
+        const docLen = tr.state.doc.length;
+        e.value.matches.forEach((m, i) => {
+          const from = Math.max(0, Math.min(docLen, m.from));
+          const to = Math.max(from, Math.min(docLen, m.to));
+          if (to > from) {
+            builder.add(from, to, i === e.value.activeIndex ? activeSearchMark : searchMark);
+          }
+        });
+        deco = builder.finish();
+      }
+    }
+    return deco;
+  },
+  provide: f => EditorView.decorations.from(f),
+});
 
 export interface CodeEditorHandle {
   /** Focus and put a single caret at the end — the click-to-write contract. */
@@ -18,6 +48,8 @@ export interface CodeEditorHandle {
   /** What the context menu operates on, read at the moment the menu opens. */
   selection(): { value: string; from: number; to: number };
   select(from: number, to: number): void;
+  /** Highlights all in-note search matches and scrolls the active match into view. */
+  setSearchHighlights(matches: MatchRange[], activeIndex: number): void;
 }
 
 interface CodeEditorProps {
@@ -76,6 +108,16 @@ export function CodeEditor({
       view.focus();
       view.dispatch({ selection: { anchor: from, head: to } });
     },
+    setSearchHighlights(matches, activeIndex) {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({ effects: setSearchEffect.of({ matches, activeIndex }) });
+      if (activeIndex < 0 || !matches[activeIndex]) return;
+      requestAnimationFrame(() => {
+        const activeEl = view.dom.querySelector<HTMLElement>('.cm-searchMatch-selected');
+        activeEl?.scrollIntoView({ block: 'center', inline: 'nearest' });
+      });
+    },
   }), []);
 
   useEffect(() => {
@@ -109,6 +151,7 @@ export function CodeEditor({
       EditorState.allowMultipleSelections.of(true),
       // Native selection rendering can only draw one range.
       drawSelection(),
+      searchHighlightField,
       // Alt+click adds a caret (VS Code's binding, and what the settings row
       // promises); CodeMirror's own default of Ctrl/Cmd+click is kept alongside.
       EditorView.clickAddsSelectionRange.of(e => e.altKey || e.ctrlKey || e.metaKey),
@@ -161,22 +204,19 @@ export function CodeEditor({
         // `border-left` on both sides of a bidi boundary, so a `border-inline-start`
         // override lands on the *other* edge in RTL and the caret stays base-theme black.
         '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--ink)' },
-        // Two rules, and the second one is spelled out in full on purpose. CodeMirror's
-        // base theme styles the focused selection through
-        // `&light.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground`,
-        // and anything shorter loses to it and leaves the stock grey #d7d4f0 behind the
-        // text. (`&light` / `&dark` themselves are baseTheme-only syntax — using them here
-        // throws "Unsupported selector" at runtime; a theme states its own colours and
-        // takes precedence over the base theme at equal specificity.)
-        //
-        // Both rules state `--selection`. The unfocused one used to be `--accent-soft`,
-        // which is the row-tint token at .12 alpha — behind body text that is close
-        // enough to invisible that a selection made and then clicked away from looked
-        // like no selection at all. DESIGN.md §1 assigns `--selection` to "selected text,
-        // everywhere", and dimming on blur is not a distinction the design system makes.
         '.cm-selectionBackground': { backgroundColor: 'var(--selection)' },
         '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
           backgroundColor: 'var(--selection)',
+        },
+        // In-note search highlights — DESIGN.md §6
+        '.cm-searchMatch': {
+          backgroundColor: 'var(--accent-soft)',
+          borderRadius: '2px',
+        },
+        '.cm-searchMatch-selected': {
+          backgroundColor: 'var(--selection)',
+          outline: '1px solid var(--accent)',
+          borderRadius: '2px',
         },
       }),
     ];

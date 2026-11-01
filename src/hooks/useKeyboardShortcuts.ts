@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 interface Options {
   onNewNote: () => void;
   onOpenPalette: () => void;
+  onFocusSidebarSearch?: () => void;
   onOpenSettings: () => void;
   onOpenShortcuts: () => void;
   onDeselect: () => void;
@@ -19,7 +20,7 @@ function isWriting(el: Element | null): boolean {
 }
 
 export function useKeyboardShortcuts({
-  onNewNote, onOpenPalette, onOpenSettings, onOpenShortcuts, onDeselect,
+  onNewNote, onOpenPalette, onFocusSidebarSearch, onOpenSettings, onOpenShortcuts, onDeselect,
 }: Options) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -33,6 +34,11 @@ export function useKeyboardShortcuts({
       if (ctrl && e.key === 'k') {
         e.preventDefault();
         onOpenPalette();
+      }
+
+      if (ctrl && e.shiftKey && (e.key === 'f' || e.key === 'F') && onFocusSidebarSearch) {
+        e.preventDefault();
+        onFocusSidebarSearch();
       }
 
       if (ctrl && e.key === ',') {
@@ -67,5 +73,5 @@ export function useKeyboardShortcuts({
 
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onNewNote, onOpenPalette, onOpenSettings, onOpenShortcuts, onDeselect]);
+  }, [onNewNote, onOpenPalette, onFocusSidebarSearch, onOpenSettings, onOpenShortcuts, onDeselect]);
 }
