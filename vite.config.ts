@@ -12,7 +12,15 @@ export default defineConfig({
       // app is a text editor — a reload mid-sentence is a data-loss-shaped surprise.
       // The user gets a toast and decides. Deviation from PLAN-V2 Phase 3.1.
       registerType: 'prompt',
-      includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'app-icon.svg'],
+      includeAssets: [
+        'favicon.ico',
+        'apple-touch-icon-180x180.png',
+        'pwa-64x64.png',
+        'pwa-192x192.png',
+        'pwa-512x512.png',
+        'maskable-icon-512x512.png',
+        'app-icon.svg',
+      ],
       manifest: {
         name: 'دفترچه',
         short_name: 'دفترچه',
@@ -25,10 +33,10 @@ export default defineConfig({
         background_color: '#F5F5F0',
         theme_color: '#F5F5F0',
         icons: [
-          { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
-          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-          { src: 'maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/pwa-64x64.png', sizes: '64x64', type: 'image/png', purpose: 'any' },
+          { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {

@@ -1,9 +1,30 @@
-# Without this, `COPY . .` overwrites the image's freshly installed node_modules
-# with the host's, and bakes .env (JWT_SECRET included) into a layer.
+# Dependencies and build outputs
 node_modules
-server/node_modules
 dist
+dist-ssr
+
+# Backend (isolated build in ./server)
+server
 data
-.git
+*.db
+*.db-*
+
+# Environments and credentials
 .env
 *.local
+
+# Version control and IDEs
+.git
+.github
+.idea
+.vscode
+.claude
+.codex
+.impeccable
+
+# Documentation and tooling output
+deploy
+docs
+graphify-out
+*.md
+*.log
