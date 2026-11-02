@@ -1,7 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, type RefObject } from 'react';
 import { EditorState, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import {
-  Decoration, type DecorationSet, EditorView, keymap, drawSelection, rectangularSelection, placeholder,
+  Decoration, Direction, type DecorationSet, EditorView, keymap, drawSelection, rectangularSelection, placeholder,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyField, historyKeymap } from '@codemirror/commands';
 import { isCoarsePointer } from '../utils/device';
@@ -234,6 +234,107 @@ export function CodeEditor({
         : EditorState.create({ doc: value, extensions }),
     });
     viewRef.current = view;
+
+    // Fix Bidi mouse hit-testing when an RTL line contains or ends with an LTR run
+    // (e.g. "… حتی space" with no trailing character). In CodeMirror's `InlineCoordsScan`,
+    // the leftmost glyph of a trailing LTR run is `spanStart` ('s'), which has `Direction.LTR`;
+    // when the pointer is at or to the left of 's', CodeMirror tests `x < mid('s')` against
+    // LTR and returns `spanStart` (before the English word) instead of `spanEnd` (end of line).
+    let dragAnchorPos: number | null = null;
+    const origPosAndSide = view.posAndSideAtCoords.bind(view) as (
+      coords: { x: number; y: number },
+      precise?: boolean,
+    ) => { pos: number; assoc: -1 | 1 } | null;
+
+    const resolveBidiPos = (
+      coords: { x: number; y: number },
+      raw: { pos: number; assoc: -1 | 1 } | null,
+      anchor: number | null,
+    ): { pos: number; assoc: -1 | 1 } | null => {
+      if (!raw) return null;
+      const line = view.state.doc.lineAt(raw.pos);
+      if (view.textDirectionAt(line.from) !== Direction.RTL) return raw;
+
+      const spans = view.bidiSpans(line);
+      if (spans.length === 0) return raw;
+
+      // 1. Check if the line ends with an LTR span and the pointer is to the left of it
+      const lastSpan = spans[spans.length - 1];
+      if (lastSpan.dir === Direction.LTR && lastSpan.to === line.length) {
+        const spanStart = line.from + lastSpan.from;
+        const spanEnd = line.from + lastSpan.to;
+        if (raw.pos >= spanStart && raw.pos <= spanEnd) {
+          const leftRect = view.coordsAtPos(spanStart, 1);
+          const rightRect = view.coordsAtPos(spanEnd, -1);
+          if (leftRect && rightRect) {
+            const top = Math.min(leftRect.top, rightRect.top) - 6;
+            const bottom = Math.max(leftRect.bottom, rightRect.bottom) + 6;
+            if (coords.y >= top && coords.y <= bottom) {
+              if (coords.x <= leftRect.left + 2) {
+                return { pos: spanEnd, assoc: -1 };
+              }
+              if (anchor !== null && anchor < spanStart && coords.x <= rightRect.right) {
+                const mirrored = spanEnd - (raw.pos - spanStart);
+                return { pos: mirrored, assoc: mirrored === spanEnd ? -1 : 1 };
+              }
+            }
+          }
+        }
+      }
+
+      // 2. When dragging right-to-left from before any inline LTR span, mirror offsets
+      //    inside that LTR span's bounding box so the selection grows monotonically.
+      if (anchor !== null) {
+        for (const span of spans) {
+          if (span.dir !== Direction.LTR) continue;
+          const spanStart = line.from + span.from;
+          const spanEnd = line.from + span.to;
+          if (anchor < spanStart && raw.pos >= spanStart && raw.pos <= spanEnd) {
+            const leftRect = view.coordsAtPos(spanStart, 1);
+            const rightRect = view.coordsAtPos(spanEnd, -1);
+            if (leftRect && rightRect) {
+              const top = Math.min(leftRect.top, rightRect.top) - 6;
+              const bottom = Math.max(leftRect.bottom, rightRect.bottom) + 6;
+              if (
+                coords.y >= top
+                && coords.y <= bottom
+                && coords.x >= leftRect.left
+                && coords.x <= rightRect.right
+              ) {
+                const mirrored = spanEnd - (raw.pos - spanStart);
+                return { pos: mirrored, assoc: mirrored === spanEnd ? -1 : 1 };
+              }
+            }
+          }
+        }
+      }
+
+      return raw;
+    };
+
+    view.posAndSideAtCoords = ((coords: { x: number; y: number }, precise?: boolean) => {
+      const raw = origPosAndSide(coords, precise);
+      return resolveBidiPos(coords, raw, dragAnchorPos);
+    }) as typeof view.posAndSideAtCoords;
+
+    view.posAtCoords = ((coords: { x: number; y: number }, precise?: boolean) => {
+      const res = resolveBidiPos(coords, origPosAndSide(coords, precise), dragAnchorPos);
+      return res ? res.pos : null;
+    }) as typeof view.posAtCoords;
+
+    const onMouseDownCapture = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      dragAnchorPos = null;
+      const raw = origPosAndSide({ x: e.clientX, y: e.clientY }, false);
+      const resolved = resolveBidiPos({ x: e.clientX, y: e.clientY }, raw, null);
+      dragAnchorPos = resolved ? resolved.pos : null;
+    };
+    const onMouseUpWindow = () => {
+      dragAnchorPos = null;
+    };
+
+    view.dom.addEventListener('mousedown', onMouseDownCapture, true);
+    window.addEventListener('mouseup', onMouseUpWindow, true);
     view.dom.addEventListener('contextmenu', onContextMenu);
 
     window.addEventListener('pagehide', onHide);
@@ -243,6 +344,8 @@ export function CodeEditor({
       // reason the stack is persisted at all.
       onHide();
       window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('mouseup', onMouseUpWindow, true);
+      view.dom.removeEventListener('mousedown', onMouseDownCapture, true);
       view.dom.removeEventListener('contextmenu', onContextMenu);
       view.destroy();
       viewRef.current = null;

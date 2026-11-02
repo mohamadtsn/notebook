@@ -8,7 +8,7 @@ import { useDebounce } from '../hooks/useDebounce';
 import { useHistory } from '../hooks/useHistory';
 import { useTextDirection } from '../hooks/useTextDirection';
 import { renderMarkdown } from '../utils/markdown';
-import { findMatches, replaceMatches, type MatchRange } from '../utils/search';
+import { findMatches, replaceMatches, isShortcutKey, type MatchRange } from '../utils/search';
 import { isCoarsePointer } from '../utils/device';
 import { EditorToolbar, type EditorMode } from './EditorToolbar';
 import { EditorSearchBar } from './EditorSearchBar';
@@ -244,11 +244,14 @@ export function Editor({
   }, [mode, isTrash, activeTitleMatchIndex, titleMatches, activeBodyMatchIndex, bodyMatches, advanced]);
 
   // Ctrl+F / Cmd+F opens the in-note find bar instantly; Escape closes it before
-  // `useKeyboardShortcuts` can deselect the note.
+  // `useKeyboardShortcuts` can deselect the note. Registered in capture phase so it
+  // runs before `useKeyboardShortcuts`'s bubble-phase fallback when a note is open,
+  // and uses `isShortcutKey` so Persian keyboard layout (`KeyF` -> `ب`) never falls
+  // through to the browser's native find bar.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
-      if (mod && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
+      if (mod && !e.shiftKey && !e.altKey && isShortcutKey(e, 'KeyF', 'f', 'ب', 'إ')) {
         if (document.querySelector('[role="dialog"]')) return;
         e.preventDefault();
         const sel = advanced
@@ -287,8 +290,8 @@ export function Editor({
         }
       }
     };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [advanced, searchOpen, closeSearch]);
 
   // Sync search highlights to CodeMirror when experimental editor is active
@@ -408,6 +411,112 @@ export function Editor({
   // Only the body: a title is one line, and pinning it is not what the control promises.
   const bodyDir  = useTextDirection(body, note.dir);
 
+  // In an RTL `<textarea>`, a line ending with an LTR run (e.g. "… حتی space" with no
+  // trailing character) renders the LTR characters left-to-right (`s-p-a-c-e`) at the
+  // left end of the RTL line, so `'e'` (`lineEnd - 1`) sits on the right and `'s'`
+  // (`ltrStart`) sits on the left. As the user drags from the RTL portion of the line
+  // (`anchor < ltrStart`) leftward across the English word, the browser hit-tests `'e'`
+  // (`lineEnd - 1`) first and counts backwards down to `'s'` (`ltrStart`), un-selecting
+  // the English word as the pointer reaches its visual left edge. Mirroring the offset
+  // within `[ltrStart, lineEnd]` while dragging leftward makes selection grow smoothly.
+  useEffect(() => {
+    if (advanced || bodyDir !== 'rtl') return;
+    const el = bodyRef.current;
+    if (!el) return;
+
+    let drag: {
+      anchor: number;
+      entryX: number | null;
+      sawInside: boolean;
+      lastX: number;
+    } | null = null;
+
+    const findTrailingLtrStart = (val: string, lineStart: number, lineEnd: number): number => {
+      let i = lineEnd;
+      let hasLatin = false;
+      while (i > lineStart) {
+        const ch = val[i - 1];
+        if (/[A-Za-z0-9_./:@#+-]/.test(ch)) {
+          if (/[A-Za-z]/.test(ch)) hasLatin = true;
+          i--;
+        } else {
+          break;
+        }
+      }
+      return hasLatin && i > lineStart && i < lineEnd ? i : -1;
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      const startX = e.clientX;
+      requestAnimationFrame(() => {
+        drag = {
+          anchor: el.selectionDirection === 'backward' ? el.selectionEnd : el.selectionStart,
+          entryX: null,
+          sawInside: false,
+          lastX: startX,
+        };
+      });
+    };
+
+    const adjustSelection = (clientX: number) => {
+      if (!drag) return;
+      const val = el.value;
+      const { anchor } = drag;
+      const rawEnd = el.selectionEnd;
+      if (el.selectionStart !== anchor || rawEnd <= anchor) return;
+
+      let lineStart = val.lastIndexOf('\n', rawEnd - 1);
+      lineStart = lineStart === -1 ? 0 : lineStart + 1;
+      let lineEnd = val.indexOf('\n', rawEnd);
+      if (lineEnd === -1) lineEnd = val.length;
+
+      const ltrStart = findTrailingLtrStart(val, lineStart, lineEnd);
+      if (ltrStart === -1 || anchor >= ltrStart) return;
+
+      if (rawEnd >= ltrStart && rawEnd <= lineEnd) {
+        if (drag.entryX === null || clientX > drag.entryX) {
+          drag.entryX = clientX;
+        }
+        if (rawEnd > ltrStart && rawEnd < lineEnd) {
+          drag.sawInside = true;
+        }
+      }
+
+      if (drag.entryX !== null && clientX <= drag.entryX && rawEnd >= ltrStart && rawEnd < lineEnd) {
+        if (rawEnd > ltrStart || drag.sawInside || drag.entryX - clientX > 8) {
+          const corrected = lineEnd - (rawEnd - ltrStart);
+          el.setSelectionRange(anchor, corrected, 'forward');
+        }
+      }
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!drag || !(e.buttons & 1)) return;
+      drag.lastX = e.clientX;
+      const x = e.clientX;
+      requestAnimationFrame(() => adjustSelection(x));
+    };
+
+    const onMouseUp = (e: MouseEvent) => {
+      if (!drag) return;
+      const x = e.clientX;
+      requestAnimationFrame(() => {
+        adjustSelection(x);
+        drag = null;
+      });
+    };
+
+    el.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      el.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [advanced, bodyDir]);
+
   // Deliberately keyed on the debounced draft only: adding `note` would re-fire
   // this on every store update and write the draft back over a newer value.
   useEffect(() => {
@@ -504,12 +613,12 @@ export function Editor({
   /** Shift+F10 / the Menu key, anchored to the textarea. DESIGN.md §6, §8. */
   const onBodyKeyDown = (e: React.KeyboardEvent) => {
     const mod = e.ctrlKey || e.metaKey;
-    if (mod && (e.key === 'z' || e.key === 'Z')) {
+    if (mod && !e.altKey && isShortcutKey(e.nativeEvent, 'KeyZ', 'z', 'ظ', 'ك')) {
       e.preventDefault();
       applyStep(e.shiftKey ? 'redo' : 'undo');
       return;
     }
-    if (mod && (e.key === 'y' || e.key === 'Y')) {
+    if (mod && !e.altKey && isShortcutKey(e.nativeEvent, 'KeyY', 'y', 'غ', '؛')) {
       e.preventDefault();
       applyStep('redo');
       return;
