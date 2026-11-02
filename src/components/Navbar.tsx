@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
-import { Menu, Moon, NotebookPen, Plus, Settings2, Sun } from 'lucide-react';
+import { Menu, Moon, Plus, Settings2, Sun } from 'lucide-react';
 import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
+import { BrandMark } from './ui/BrandMark';
 
 interface NavbarProps {
   onNewNote: () => void;
@@ -29,12 +30,7 @@ export function Navbar({
           <Menu size={18} />
         </IconButton>
         {/* Mark, not a control: decorative, so it stays out of the a11y tree */}
-        <span
-          aria-hidden
-          className="ms-1 flex size-8 items-center justify-center rounded-lg bg-accent text-on-accent shadow-e1"
-        >
-          <NotebookPen size={17} />
-        </span>
+        <BrandMark size={32} variant="badge" className="ms-1 shrink-0 rounded-lg shadow-e1" />
         <h1 className="text-lg font-semibold tracking-[-0.01em] text-ink">دفترچه</h1>
       </div>
 

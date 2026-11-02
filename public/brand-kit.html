@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>دفترچه — هویت بصری و پک برند (Brand Kit)</title>
+  <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
+  <style>
+    :root {
+      --canvas: #F5F5F0;
+      --surface: #FFFFFF;
+      --dark-canvas: #131315;
+      --dark-surface: #1C1C1F;
+      --ink: #0F172A;
+      --ink-soft: #3F4654;
+      --muted: #646B78;
+      --accent: #0E7490;
+      --accent-dark: #22B8CF;
+      --sand: #D9C89E;
+      --sky: #9BBFD4;
+      --sage: #A8C2A5;
+      --rose: #D6AAB2;
+      --lilac: #B5AECD;
+      --board-bg: #0D0E11;
+      --board-border: rgba(255, 255, 255, 0.09);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--board-bg);
+      color: #EDEDEF;
+      font-family: 'Vazirmatn Variable', 'Vazirmatn', system-ui, -apple-system, sans-serif;
+      line-height: 1.65;
+      padding: 28px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .deck {
+      max-width: 1360px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .deck-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 4px 10px;
+      border-bottom: 1px solid var(--board-border);
+    }
+
+    .deck-title {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+    }
+
+    .deck-title h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #FFFFFF;
+    }
+
+    .deck-title span {
+      font-size: 0.82rem;
+      color: #8E8E93;
+    }
+
+    .deck-meta {
+      font-family: ui-monospace, 'Geist Mono Variable', monospace;
+      font-size: 0.75rem;
+      color: #8E8E93;
+      direction: ltr;
+    }
+
+    /* 3x2 Studio Brand Board Grid */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 16px;
+    }
+
+    .panel {
+      position: relative;
+      border-radius: 22px;
+      overflow: hidden;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border: 1px solid var(--board-border);
+    }
+
+    .panel-tag {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.01em;
+    }
+
+    .panel-tag code {
+      font-family: ui-monospace, monospace;
+      font-size: 0.68rem;
+      direction: ltr;
+      opacity: 0.8;
+    }
+
+    /* Panel 1: Hero App Icon (Warm Paper Canvas) */
+    .p-hero {
+      grid-column: span 5;
+      min-height: 360px;
+      background: var(--canvas);
+      color: var(--ink);
+      border-color: rgba(15, 23, 42, 0.08);
+    }
+
+    .hero-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      padding: 16px 0;
+    }
+
+    .hero-center img {
+      width: 176px;
+      height: 176px;
+      border-radius: 40px;
+      box-shadow: 0 20px 44px rgba(8, 76, 97, 0.24), 0 4px 10px rgba(15, 23, 42, 0.08);
+    }
+
+    .hero-caption {
+      text-align: center;
+    }
+
+    .hero-caption h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+
+    .hero-caption p {
+      font-size: 0.82rem;
+      color: var(--ink-soft);
+      margin-top: 2px;
+    }
+
+    /* Panel 2: Architectural Construction Grid (Dark Teal Blueprint) */
+    .p-blueprint {
+      grid-column: span 4;
+      min-height: 360px;
+      background: radial-gradient(circle at 70% 25%, #0E7490 0%, #073B4C 65%, #04222C 100%);
+      color: #EDEDEF;
+    }
+
+    .p-blueprint .panel-tag {
+      color: rgba(255, 255, 255, 0.68);
+    }
+
+    .blueprint-stage {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+    }
+
+    /* Panel 3: Optical Scale Ladder (Dark Surface) */
+    .p-scale {
+      grid-column: span 3;
+      min-height: 360px;
+      background: var(--dark-surface);
+      color: #EDEDEF;
+    }
+
+    .scale-ladder {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin: auto 0;
+    }
+
+    .scale-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .scale-meta {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .scale-meta strong {
+      font-size: 0.78rem;
+      color: #EDEDEF;
+      font-weight: 600;
+    }
+
+    .scale-meta span {
+      font-family: ui-monospace, monospace;
+      font-size: 0.68rem;
+      color: #8E8E93;
+      direction: ltr;
+      text-align: right;
+    }
+
+    /* Panel 4: Brand Lockups (Light & Dark) */
+    .p-lockups {
+      grid-column: span 5;
+      min-height: 290px;
+      background: var(--surface);
+      color: var(--ink);
+    }
+
+    .lockup-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin: 14px 0;
+    }
+
+    .lockup-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-radius: 16px;
+    }
+
+    .lockup-light {
+      background: var(--canvas);
+      border: 1px solid rgba(15, 23, 42, 0.1);
+      color: var(--ink);
+    }
+
+    .lockup-dark {
+      background: var(--dark-canvas);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #EDEDEF;
+    }
+
+    .lockup-brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .lockup-brand img {
+      width: 44px;
+      height: 44px;
+      border-radius: 11px;
+    }
+
+    .lockup-text h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .lockup-text p {
+      font-size: 0.74rem;
+      opacity: 0.7;
+      margin-top: 2px;
+    }
+
+    .lockup-badge {
+      font-family: ui-monospace, monospace;
+      font-size: 0.68rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(14, 116, 144, 0.12);
+      color: var(--accent);
+      direction: ltr;
+    }
+
+    .lockup-dark .lockup-badge {
+      background: rgba(34, 184, 207, 0.16);
+      color: var(--accent-dark);
+    }
+
+    /* Panel 5: Design Tokens & Note Label Palette */
+    .p-palette {
+      grid-column: span 4;
+      min-height: 290px;
+      background: var(--dark-surface);
+      color: #EDEDEF;
+    }
+
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin: 14px 0 10px;
+    }
+
+    .swatch {
+      border-radius: 12px;
+      padding: 12px 10px 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 86px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .swatch strong {
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+
+    .swatch code {
+      font-family: ui-monospace, monospace;
+      font-size: 0.64rem;
+      direction: ltr;
+      opacity: 0.85;
+    }
+
+    .label-strip {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .label-pill {
+      flex: 1;
+      border-radius: 8px;
+      padding: 7px 8px;
+      font-family: ui-monospace, monospace;
+      font-size: 0.64rem;
+      color: #0F172A;
+      font-weight: 600;
+      text-align: center;
+      direction: ltr;
+    }
+
+    /* Panel 6: Asset Pack Downloads & Symbol Mark */
+    .p-assets {
+      grid-column: span 3;
+      min-height: 290px;
+      background: var(--canvas);
+      color: var(--ink);
+    }
+
+    .asset-list {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin: 12px 0;
+    }
+
+    .asset-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 11px;
+      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid rgba(15, 23, 42, 0.1);
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 0.75rem;
+      font-weight: 500;
+      transition: border-color 140ms ease, transform 120ms ease;
+    }
+
+    .asset-link:hover {
+      border-color: var(--accent);
+    }
+
+    .asset-link code {
+      font-family: ui-monospace, monospace;
+      font-size: 0.68rem;
+      color: var(--accent);
+      direction: ltr;
+    }
+
+    .footnote {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    @media (max-width: 1024px) {
+      .p-hero, .p-blueprint, .p-scale, .p-lockups, .p-palette, .p-assets {
+        grid-column: span 12;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <header class="deck-header">
+      <div class="deck-title">
+        <h1>دفترچه — سیستم هویت بصری و پک آیکون</h1>
+        <span>مفهوم طراحی: «شیرازهٔ راست‌به‌چپ، ورقِ کاغذ گرم و نشانک شنی»</span>
+      </div>
+      <div class="deck-meta">BRAND SYSTEM · RTL-FIRST · DESIGN.MD §1–§6</div>
+    </header>
+
+    <main class="grid">
+      <!-- 01: Primary App Icon -->
+      <section class="panel p-hero">
+        <div class="panel-tag">
+          <span>۰۱ · نماد اصلی برنامه (App Icon)</span>
+          <code>512 × 512 · rx=116</code>
+        </div>
+        <div class="hero-center">
+          <img src="./app-icon.svg" alt="آیکون دفترچه" />
+          <div class="hero-caption">
+            <h2>دفترچه</h2>
+            <p>شیرازه در لبهٔ راست (RTL)، تاخوردگی گوشهٔ برگ و نشانک کهربایی</p>
+          </div>
+        </div>
+        <div class="panel-tag">
+          <span>پالت کاغذ گرم و فیروزه‌ای عمیق</span>
+          <code>#0E7490 · #F5F5F0 · #D9C89E</code>
+        </div>
+      </section>
+
+      <!-- 02: Geometric Construction Blueprint -->
+      <section class="panel p-blueprint">
+        <div class="panel-tag">
+          <span>۰۲ · هندسه و شبکهٔ تناسبات (Construction Grid)</span>
+          <code>GOLDEN &amp; RTL AXIS</code>
+        </div>
+        <div class="blueprint-stage">
+          <svg width="248" height="248" viewBox="0 0 512 512" fill="none">
+            <!-- Construction grid lines -->
+            <rect x="2" y="2" width="508" height="508" rx="114" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="2" stroke-dasharray="6 6"/>
+            <circle cx="256" cy="256" r="204" stroke="#22B8CF" stroke-opacity="0.32" stroke-width="1.5"/>
+            <circle cx="256" cy="256" r="142" stroke="#22B8CF" stroke-opacity="0.22" stroke-width="1.5" stroke-dasharray="4 4"/>
+            <line x1="144" y1="0" x2="144" y2="512" stroke="#22B8CF" stroke-opacity="0.28" stroke-width="1.5"/>
+            <line x1="328" y1="0" x2="328" y2="512" stroke="#D9C89E" stroke-opacity="0.55" stroke-width="1.5"/>
+            <line x1="376" y1="0" x2="376" y2="512" stroke="#D9C89E" stroke-opacity="0.55" stroke-width="1.5"/>
+            <line x1="0" y1="104" x2="512" y2="104" stroke="#22B8CF" stroke-opacity="0.28" stroke-width="1.5"/>
+            <line x1="0" y1="404" x2="512" y2="404" stroke="#22B8CF" stroke-opacity="0.28" stroke-width="1.5"/>
+            <line x1="112" y1="188" x2="228" y2="72" stroke="#D9C89E" stroke-opacity="0.65" stroke-width="1.5"/>
+
+            <!-- Wireframe notebook silhouette -->
+            <rect x="132" y="118" width="232" height="276" rx="28" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="2"/>
+            <path d="M182 376H218V424L200 411L182 424V376Z" fill="#D9C89E" fill-opacity="0.35" stroke="#D9C89E" stroke-width="2.5"/>
+            <path
+              d="M196 104H346C362.569 104 376 117.431 376 134V374C376 390.569 362.569 404 346 404H174C157.431 404 144 390.569 144 374V156L196 104Z"
+              fill="#FFFFFF"
+              fill-opacity="0.08"
+              stroke="#FFFFFF"
+              stroke-width="3"
+            />
+            <path d="M196 104V140C196 148.837 188.837 156 180 156H144L196 104Z" stroke="#22B8CF" stroke-width="2.5"/>
+            <rect x="345" y="152" width="14" height="24" rx="7" stroke="#D9C89E" stroke-width="2"/>
+            <rect x="345" y="242" width="14" height="24" rx="7" stroke="#D9C89E" stroke-width="2"/>
+            <rect x="345" y="332" width="14" height="24" rx="7" stroke="#D9C89E" stroke-width="2"/>
+            <circle cx="298" cy="176" r="7" fill="#D9C89E"/>
+            <rect x="206" y="169" width="76" height="14" rx="7" stroke="#FFFFFF" stroke-width="2"/>
+            <rect x="177" y="218" width="128" height="12" rx="6" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="2"/>
+            <rect x="193" y="254" width="112" height="12" rx="6" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="2"/>
+            <rect x="225" y="290" width="80" height="12" rx="6" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="2"/>
+          </svg>
+        </div>
+        <div class="panel-tag">
+          <span>تراز خطوط از محور راست (x=305)</span>
+          <code>45° PAGE CHAMFER</code>
+        </div>
+      </section>
+
+      <!-- 03: Optical Sizing & PWA Scale Ladder -->
+      <section class="panel p-scale">
+        <div class="panel-tag">
+          <span>۰۳ · مقیاس‌های نوری (Optical Scales)</span>
+          <code>PWA &amp; FAVICON</code>
+        </div>
+        <div class="scale-ladder">
+          <div class="scale-row">
+            <img src="./app-icon.svg" width="64" height="64" style="border-radius:14px" alt="64px" />
+            <div class="scale-meta">
+              <strong>آیکون PWA و دسکتاپ</strong>
+              <span>512px · 192px · 64px</span>
+            </div>
+          </div>
+          <div class="scale-row">
+            <img src="./maskable-icon.svg" width="48" height="48" style="border-radius:50%" alt="Maskable" />
+            <div class="scale-meta">
+              <strong>نسخهٔ Maskable اندروید</strong>
+              <span>80% Safe Zone · 512px</span>
+            </div>
+          </div>
+          <div class="scale-row">
+            <img src="./app-icon.svg" width="32" height="32" style="border-radius:8px" alt="32px" />
+            <div class="scale-meta">
+              <strong>نشان نوار بالا و تب مرورگر</strong>
+              <span>32×32 · 16×16 Favicon</span>
+            </div>
+          </div>
+        </div>
+        <div class="panel-tag">
+          <span>خوانایی کامل در ۱۶ پیکسل</span>
+          <code>OPTICAL CLARITY</code>
+        </div>
+      </section>
+
+      <!-- 04: Light & Dark Brand Lockups -->
+      <section class="panel p-lockups">
+        <div class="panel-tag">
+          <span>۰۴ · لوگوتایپ و همنشینی در حالت روشن و تاریک</span>
+          <code>VAZIRMATN VARIABLE</code>
+        </div>
+        <div class="lockup-stack">
+          <div class="lockup-card lockup-light">
+            <div class="lockup-brand">
+              <img src="./app-icon.svg" alt="دفترچه" />
+              <div class="lockup-text">
+                <h3>دفترچه</h3>
+                <p>خلوتِ نوشتن؛ فارسی‌محور و همیشه در دسترس</p>
+              </div>
+            </div>
+            <span class="lockup-badge">Light · #F5F5F0</span>
+          </div>
+
+          <div class="lockup-card lockup-dark">
+            <div class="lockup-brand">
+              <img src="./app-icon.svg" alt="دفترچه" />
+              <div class="lockup-text">
+                <h3>دفترچه</h3>
+                <p>خلوتِ نوشتن؛ فارسی‌محور و همیشه در دسترس</p>
+              </div>
+            </div>
+            <span class="lockup-badge">Dark · #131315</span>
+          </div>
+        </div>
+        <div class="panel-tag">
+          <span>هماهنگ با توکن‌های DESIGN.md</span>
+          <code>RTL LOCKUP</code>
+        </div>
+      </section>
+
+      <!-- 05: Color Tokens & Note Label Ribbons -->
+      <section class="panel p-palette">
+        <div class="panel-tag">
+          <span>۰۵ · پالت رنگ و توکن‌های معنایی برند</span>
+          <code>WCAG AA ≥ 4.9:1</code>
+        </div>
+        <div>
+          <div class="swatches">
+            <div class="swatch" style="background:#0E7490;color:#FFFFFF">
+              <strong>فیروزه‌ای تیره</strong>
+              <code>#0E7490</code>
+            </div>
+            <div class="swatch" style="background:#22B8CF;color:#0B0B0D">
+              <strong>فیروزه‌ای روشن</strong>
+              <code>#22B8CF</code>
+            </div>
+            <div class="swatch" style="background:#F5F5F0;color:#0F172A">
+              <strong>کاغذ گرم</strong>
+              <code>#F5F5F0</code>
+            </div>
+            <div class="swatch" style="background:#0F172A;color:#EDEDEF">
+              <strong>مرکب متن</strong>
+              <code>#0F172A</code>
+            </div>
+          </div>
+          <div class="label-strip">
+            <div class="label-pill" style="background:#D9C89E">Sand</div>
+            <div class="label-pill" style="background:#9BBFD4">Sky</div>
+            <div class="label-pill" style="background:#A8C2A5">Sage</div>
+            <div class="label-pill" style="background:#D6AAB2">Rose</div>
+            <div class="label-pill" style="background:#B5AECD">Lilac</div>
+          </div>
+        </div>
+        <div class="panel-tag">
+          <span>رنگ‌های برچسب یادداشت (۵ طیف مات)</span>
+          <code>SEMANTIC TOKENS</code>
+        </div>
+      </section>
+
+      <!-- 06: Production Asset Files -->
+      <section class="panel p-assets">
+        <div class="panel-tag">
+          <span>۰۶ · فایل‌های خروجی پک برند</span>
+          <code>PUBLIC/ ASSETS</code>
+        </div>
+        <div class="asset-list">
+          <a class="asset-link" href="./app-icon.svg" download>
+            <span>آیکون اصلی (وکتور)</span>
+            <code>app-icon.svg</code>
+          </a>
+          <a class="asset-link" href="./logo-mark.svg" download>
+            <span>نماد مستقل (بدون پس‌زمینه)</span>
+            <code>logo-mark.svg</code>
+          </a>
+          <a class="asset-link" href="./logo-lockup-fa.svg" download>
+            <span>لوگوتایپ افقی فارسی</span>
+            <code>logo-lockup-fa.svg</code>
+          </a>
+          <a class="asset-link" href="./pwa-512x512.png" download>
+            <span>آیکون نصب PWA (۵۱۲)</span>
+            <code>pwa-512x512.png</code>
+          </a>
+          <a class="asset-link" href="./maskable-icon-512x512.png" download>
+            <span>آیکون Maskable سیستم‌عامل</span>
+            <code>maskable-icon-512x512.png</code>
+          </a>
+        </div>
+        <p class="footnote">تمامی فایل‌ها در مانیفست PWA و رابط کاربری برنامه جایگذاری شده‌اند.</p>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="180" viewBox="0 0 640 180" fill="none" dir="rtl">
+  <defs>
+    <linearGradient id="lockup-teal" x1="596" y1="26" x2="484" y2="154" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1186A6"/>
+      <stop offset="0.55" stop-color="#0E7490"/>
+      <stop offset="1" stop-color="#084C61"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Right-aligned (RTL) App Icon Mark -->
+  <g transform="translate(476 26) scale(0.25)">
+    <rect width="512" height="512" rx="116" fill="url(#lockup-teal)"/>
+    <rect x="132" y="118" width="232" height="276" rx="28" fill="#DCE8EB" opacity="0.72"/>
+    <path d="M182 376H218V424L200 411L182 424V376Z" fill="#D9C89E"/>
+    <path
+      d="M196 104H346C362.569 104 376 117.431 376 134V374C376 390.569 362.569 404 346 404H174C157.431 404 144 390.569 144 374V156L196 104Z"
+      fill="#FFFFFF"
+    />
+    <path
+      d="M196 104V140C196 148.837 188.837 156 180 156H144L196 104Z"
+      fill="#DFE8EA"
+    />
+    <path
+      d="M328 104H346C362.569 104 376 117.431 376 134V374C376 390.569 362.569 404 346 404H328V104Z"
+      fill="#073B4C"
+    />
+    <rect x="345" y="152" width="14" height="24" rx="7" fill="#F5F5F0"/>
+    <rect x="345" y="242" width="14" height="24" rx="7" fill="#F5F5F0"/>
+    <rect x="345" y="332" width="14" height="24" rx="7" fill="#F5F5F0"/>
+    <circle cx="298" cy="176" r="7" fill="#D9C89E"/>
+    <rect x="206" y="169" width="76" height="14" rx="7" fill="#0E7490"/>
+    <rect x="177" y="218" width="128" height="12" rx="6" fill="#0F172A" fill-opacity="0.28"/>
+    <rect x="193" y="254" width="112" height="12" rx="6" fill="#0F172A" fill-opacity="0.28"/>
+    <rect x="225" y="290" width="80" height="12" rx="6" fill="#0F172A" fill-opacity="0.20"/>
+  </g>
+
+  <!-- RTL Wordmark & Tagline -->
+  <text
+    x="448"
+    y="96"
+    text-anchor="start"
+    direction="rtl"
+    font-family="'Vazirmatn Variable', 'Vazirmatn', system-ui, sans-serif"
+    font-size="52"
+    font-weight="700"
+    letter-spacing="-0.02em"
+    fill="#0F172A"
+  >دفترچه</text>
+
+  <text
+    x="448"
+    y="132"
+    text-anchor="start"
+    direction="rtl"
+    font-family="'Vazirmatn Variable', 'Vazirmatn', system-ui, sans-serif"
+    font-size="18"
+    font-weight="500"
+    fill="#646B78"
+  >خلوتِ نوشتن؛ فارسی‌محور و همیشه در دسترس</text>
+</svg>

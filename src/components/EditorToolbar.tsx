@@ -1,5 +1,5 @@
 import {
-  Download, MoreHorizontal, Pilcrow, PilcrowLeft, PilcrowRight, Pin, TextSelect, Trash2, Undo2,
+  Download, MoreHorizontal, Pilcrow, PilcrowLeft, PilcrowRight, Pin, Search, TextSelect, Trash2, Undo2,
 } from 'lucide-react';
 import type { Note, NoteColor, NoteDir } from '../types/note';
 import { NOTE_COLORS, NOTE_COLOR_LABEL, NOTE_DIRS, NOTE_DIR_LABEL, noteColorVar } from '../types/note';
@@ -32,6 +32,8 @@ interface EditorToolbarProps {
    * that decision — see the comment on `openMenu` for why touch cannot use right-click.
    */
   onSelectionMenu?: (x: number, y: number) => void;
+  searchOpen?: boolean;
+  onToggleSearch?: () => void;
 }
 
 const DIR_ICON: Record<NoteDir, typeof Pilcrow> = {
@@ -52,7 +54,7 @@ const MODES: { value: EditorMode; label: string }[] = [
 export function EditorToolbar({
   note, groups, onMove, isTrash, mode, onModeChange,
   onTogglePin, onSetColor, onSetDir, onExport, onTrash, onRestore, onPermanentDelete,
-  onSelectionMenu,
+  onSelectionMenu, searchOpen = false, onToggleSearch,
 }: EditorToolbarProps) {
   const DirIcon = DIR_ICON[note.dir];
   return (
@@ -63,6 +65,16 @@ export function EditorToolbar({
         onChange={onModeChange}
         label="حالت ویرایشگر"
       />
+
+      {onToggleSearch && (
+        <IconButton
+          label="جستجو در یادداشت (Ctrl+F)"
+          active={searchOpen}
+          onClick={onToggleSearch}
+        >
+          <Search size={16} />
+        </IconButton>
+      )}
 
       {onSelectionMenu && (
         <IconButton

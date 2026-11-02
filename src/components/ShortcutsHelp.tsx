@@ -24,12 +24,14 @@ interface Shortcut {
 const GENERAL: Shortcut[] = [
   { label: 'یادداشت جدید', keys: ['Ctrl', 'N'] },
   { label: 'جستجو و دستورها', keys: ['Ctrl', 'K'] },
+  { label: 'جستجو در لیست یادداشت‌ها', keys: ['Ctrl', 'Shift', 'F'] },
   { label: 'تنظیمات', keys: ['Ctrl', ','] },
   { label: 'همین پنجره', keys: ['?'] },
   { label: 'بستن پنجره یا خروج از فیلد', keys: ['Esc'] },
 ];
 
 const EDITOR: Shortcut[] = [
+  { label: 'جستجو و جایگزینی در متن یادداشت', keys: ['Ctrl', 'F'] },
   { label: 'واگرد', keys: ['Ctrl', 'Z'] },
   { label: 'ازنو', keys: ['Ctrl', 'Shift', 'Z'] },
   { label: 'ازنو (جایگزین)', keys: ['Ctrl', 'Y'] },

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useNotes } from './hooks/useNotes';
 import { useGroups } from './hooks/useGroups';
@@ -68,6 +68,9 @@ export default function App() {
   useSwUpdate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
+  const [editorSearch, setEditorSearch] = useState<{ noteId: string; query: string; token: number } | null>(null);
+  const sidebarSearchInputRef = useRef<HTMLInputElement | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Keyboard paths open the panel instantly; a pointer click gets the enter. DESIGN.md §5.
@@ -102,9 +105,23 @@ export default function App() {
     onUnauthorized: handleUnauthorized,
   });
 
+  const focusSidebarSearch = useCallback(() => {
+    if (!window.matchMedia('(min-width: 768px)').matches) {
+      setSidebarOpen(true);
+    }
+    requestAnimationFrame(() => {
+      const inputs = document.querySelectorAll<HTMLInputElement>('[data-sidebar-search="true"]');
+      const visible =
+        Array.from(inputs).find(el => el.getClientRects().length > 0) ?? sidebarSearchInputRef.current;
+      visible?.focus();
+      visible?.select();
+    });
+  }, []);
+
   useKeyboardShortcuts({
     onNewNote: newNote,
     onOpenPalette: () => setPaletteOpen(true),
+    onFocusSidebarSearch: focusSidebarSearch,
     onOpenSettings: () => { setSettingsInstant(true); setSettingsOpen(true); },
     onOpenShortcuts: () => setShortcuts({ instant: true }),
     onDeselect: () => selectNote(null),
@@ -116,6 +133,11 @@ export default function App() {
     // A note reached through search may live in the other view
     setView(notes.find(n => n.id === id)?.deletedAt ? 'trash' : 'notes');
   }, [selectNote, notes]);
+
+  const handleSelectSearchResult = useCallback((id: string, query: string) => {
+    handleSelect(id);
+    setEditorSearch({ noteId: id, query, token: Date.now() });
+  }, [handleSelect]);
 
   const handleViewChange = (v: View) => {
     setView(v);
@@ -171,7 +193,11 @@ export default function App() {
       view={view}
       onViewChange={handleViewChange}
       onSelect={handleSelect}
+      onSelectSearchResult={handleSelectSearchResult}
       onOpenSearch={() => setPaletteOpen(true)}
+      searchQuery={sidebarSearchQuery}
+      onSearchQueryChange={setSidebarSearchQuery}
+      searchInputRef={sidebarSearchInputRef}
       groups={activeGroups}
       groupCounts={groupCounts}
       selectedGroup={selectedGroup}
@@ -222,6 +248,11 @@ export default function App() {
               onAttachmentAdded={addAttachment}
               onAttachmentRemoved={dropAttachment}
               onOpenSettings={() => { setSettingsInstant(false); setSettingsOpen(true); }}
+              initialSearch={
+                editorSearch && editorSearch.noteId === activeNote.id
+                  ? { query: editorSearch.query, token: editorSearch.token }
+                  : null
+              }
             />
           ) : (
             <EmptyState onNewNote={view === 'notes' ? newNote : undefined} />
@@ -286,9 +317,11 @@ export default function App() {
       {paletteOpen && (
         <CommandPalette
           onClose={() => setPaletteOpen(false)}
-          notes={notes.filter(n => !n.deletedAt)}
+          notes={activeNotes}
+          trashedNotes={trashedNotes}
           dark={resolvedDark}
           onSelectNote={handleSelect}
+          onSelectSearchResult={handleSelectSearchResult}
           onNewNote={newNote}
           onToggleDark={toggleDark}
           onOpenTrash={() => handleViewChange('trash')}

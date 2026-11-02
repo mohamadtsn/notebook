@@ -18,6 +18,9 @@ import {
   type NoteHistory,
 } from './history.ts';
 import { deviceLabel } from './device.ts';
+import {
+  normalizeWithMap, findMatches, replaceMatches, buildSnippet, searchNotes, isShortcutKey,
+} from './search.ts';
 import { JSDOM } from 'jsdom';
 
 // renderMarkdown sanitises with DOMPurify, which needs a real DOM. Installing one here
@@ -519,5 +522,121 @@ Object.values(keptCm).forEach(e => assert.equal(
 // One note over budget is still kept: evicting it would leave nothing to undo to.
 const onlyOne = { solo: { snapshot: { doc: 'y'.repeat(400 * 1024) }, updatedAt: 1 } };
 assert.deepEqual(evictCmHistories(onlyOne), onlyOne);
+
+// ── Persian & Latin offset-preserving search engine ─────────────────
+// 1. Arabic Yeh/Kaf normalize to Persian Yeh/Kaf while keeping 1:1 offsets
+assert.deepEqual(
+  findMatches('كتاب يادداشت من', 'کتاب یادداشت'),
+  [{ from: 0, to: 12 }],
+  'Arabic kaf and yeh must match Persian kaf and yeh',
+);
+
+// 2. Persian, Arabic-Indic, and ASCII digits match interchangeably
+assert.deepEqual(
+  findMatches('سال ۱۴۰۳ و ١٤٠٣', '1403'),
+  [{ from: 4, to: 8 }, { from: 11, to: 15 }],
+  'Persian and Arabic-Indic digits must match ASCII digits with exact raw offsets',
+);
+
+// 3. Diacritics (harakat) and tatweel (kashida) are stripped without shifting offsets
+assert.deepEqual(
+  findMatches('سَـلٰام دنیا', 'سلام'),
+  [{ from: 0, to: 7 }],
+  'diacritics and tatweel inside a word must be included in raw match bounds',
+);
+assert.deepEqual(
+  findMatches('سَـلٰام دنیا', 'دنیا'),
+  [{ from: 8, to: 12 }],
+  'offsets after stripped diacritics/tatweel must map back to exact raw indices',
+);
+
+// 4. Half-space (ZWNJ \u200C) equivalence: ZWNJ <-> space <-> collapsed
+assert.deepEqual(
+  findMatches('می‌روم به خانه', 'می روم'),
+  [{ from: 0, to: 6 }],
+  'space in query matches ZWNJ in text',
+);
+assert.deepEqual(
+  findMatches('می روم به خانه', 'می‌روم'),
+  [{ from: 0, to: 6 }],
+  'ZWNJ in query matches space in text',
+);
+assert.deepEqual(
+  findMatches('می‌روم به خانه', 'میروم'),
+  [{ from: 0, to: 6 }],
+  'collapsed query without ZWNJ matches ZWNJ word in text with full raw range',
+);
+assert.deepEqual(
+  findMatches('میروم به خانه', 'می‌روم'),
+  [{ from: 0, to: 5 }],
+  'ZWNJ query matches collapsed word in text with exact raw range',
+);
+
+// 5. caseSensitive (exact match mode) disables case folding and character folding
+assert.deepEqual(findMatches('Hello hello', 'Hello', { caseSensitive: true }), [{ from: 0, to: 5 }]);
+assert.deepEqual(findMatches('كتاب', 'کتاب', { caseSensitive: true }), []);
+
+// 6. wholeWord boundary checks work for both Persian and Latin scripts
+assert.deepEqual(
+  findMatches('این کار در کارخانه و همکار است', 'کار', { wholeWord: true }),
+  [{ from: 4, to: 7 }],
+  'wholeWord must match standalone Persian word and reject prefix/suffix matches',
+);
+assert.deepEqual(
+  findMatches('cat scatter catalog cat!', 'cat', { wholeWord: true }),
+  [{ from: 0, to: 3 }, { from: 20, to: 23 }],
+);
+
+// 7. replaceMatches slices raw [from, to] accurately even when match length != query length
+const replacedSingle = replaceMatches(
+  'سَـلٰام سَـلٰام دنیا',
+  findMatches('سَـلٰام سَـلٰام دنیا', 'سلام'),
+  'درود',
+  0,
+);
+assert.equal(replacedSingle.value, 'درود سَـلٰام دنیا');
+assert.equal(replacedSingle.caret, 4);
+
+const replacedAll = replaceMatches(
+  'می‌روم و مـی‌روم',
+  findMatches('می‌روم و مـی‌روم', 'میروم'),
+  'رفتم',
+);
+assert.equal(replacedAll.value, 'رفتم و رفتم');
+
+// 8. buildSnippet extracts a context window around the match and rebases highlight ranges
+const longBody = `${'الف '.repeat(40)}کلیدواژهٔ مهم در متن${' ب'.repeat(40)}`;
+const snip = buildSnippet(longBody, 'کلیدواژه مهم', 60);
+assert.ok(snip.prefixEllipsis, 'long text before match should set prefixEllipsis');
+assert.ok(snip.suffixEllipsis, 'long text after match should set suffixEllipsis');
+assert.ok(snip.matches.length > 0, 'snippet must carry rebased match ranges');
+const highlightedSlice = snip.text.slice(snip.matches[0].from, snip.matches[0].to);
+assert.equal(highlightedSlice, 'کلیدواژهٔ مهم', 'rebased range must slice the exact matched phrase in snippet.text');
+
+// 9. searchNotes supports multi-token queries across title/body/group and ranks title matches first
+const sNotes: Note[] = [
+  note({ id: 'body-only', title: 'یادداشت روزانه', body: 'امروز روی پروژه ری‌اکت کار کردم', updatedAt: 500 }),
+  note({ id: 'title-exact', title: 'پروژه ری اکت', body: 'توضیحات کلی', updatedAt: 100 }),
+  note({ id: 'unrelated', title: 'خرید خانه', body: 'شیر و نان', updatedAt: 900 }),
+];
+const ranked = searchNotes(sNotes, 'پروژه ری‌اکت');
+assert.equal(ranked.length, 2, 'unrelated note must be filtered out; both ZWNJ variants must match');
+assert.equal(ranked[0].note.id, 'title-exact', 'title match must rank above body-only match regardless of updatedAt');
+assert.equal(ranked[1].note.id, 'body-only');
+assert.ok(ranked[0].titleMatches.length > 0, 'title match ranges must be populated');
+assert.ok(ranked[1].bodyMatchCount > 0, 'body match count must be populated');
+
+// normalizeWithMap invariants
+const normSample = normalizeWithMap('آزمونِ ۱۲');
+assert.equal(normSample.normalized, 'ازمون 12');
+assert.equal(normSample.map.length, normSample.normalized.length + 1);
+
+// 10. isShortcutKey matches both physical e.code and Persian/Latin e.key values
+assert.equal(isShortcutKey({ code: 'KeyF', key: 'ب' }, 'KeyF', 'f', 'ب', 'إ'), true, 'Persian layout Ctrl+F (KeyF / ب) must match');
+assert.equal(isShortcutKey({ code: '', key: 'ب' }, 'KeyF', 'f', 'ب', 'إ'), true, 'Persian layout without e.code must still match via key');
+assert.equal(isShortcutKey({ code: 'KeyK', key: 'ن' }, 'KeyK', 'k', 'ن', '«'), true, 'Persian layout Ctrl+K (KeyK / ن) must match');
+assert.equal(isShortcutKey({ code: 'KeyN', key: 'د' }, 'KeyN', 'n', 'د', 'أ'), true, 'Persian layout Ctrl+N (KeyN / د) must match');
+assert.equal(isShortcutKey({ code: 'Comma', key: 'و' }, 'Comma', ',', 'و', '<'), true, 'Persian layout Ctrl+, (Comma / و) must match');
+assert.equal(isShortcutKey({ code: 'KeyA', key: 'ش' }, 'KeyF', 'f', 'ب', 'إ'), false, 'Different key must not match');
 
 console.log('checks passed');

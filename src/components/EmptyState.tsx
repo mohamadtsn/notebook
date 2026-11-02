@@ -1,6 +1,7 @@
 import { motion } from 'motion/react';
 import { easeOut } from '../lib/motion';
 import { Button } from './ui/Button';
+import { BrandMark } from './ui/BrandMark';
 
 interface EmptyStateProps {
   onNewNote?: () => void;
@@ -14,6 +15,7 @@ export function EmptyState({ onNewNote }: EmptyStateProps) {
       transition={{ duration: 0.24, ease: easeOut }}
       className="flex h-full flex-col items-center justify-center p-8 text-center"
     >
+      <BrandMark size={56} variant="duotone" className="mb-3 opacity-90" />
       <h2 className="mb-1.5 text-lg font-medium tracking-[-0.01em] text-ink">
         یادداشتی انتخاب نشده
       </h2>

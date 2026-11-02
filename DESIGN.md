@@ -283,6 +283,12 @@ browser menu.
 
 **Command palette** — glass `overlay`, centered, `⌘K`. Searches notes and exposes actions. Opens instantly, no animation.
 
+**Sidebar search field** — inline `--fill` input (`--r-sm`, `min-height: 40px`, touch target ≥44px) sitting above the note rows inside the sidebar's scroll container. Tier-2 focus (`ring-2 ring-accent` + `shadow-[0_0_0_4px_var(--accent-soft)]`). Never glass: the sidebar itself is a `--surface` card. Carries a leading `Search` icon, an inline-end clear (`X`) button when non-empty, and a `Ctrl K` hint chip when empty that opens the command palette. Filters the current view (`notes` or `trash`) synchronously with zero artificial debounce. When a group filter yields 0 matches while matches exist across all notes, the empty state names the count and offers a one-tap switch to «همه».
+
+**In-note search bar (`EditorSearchBar`)** — `glass-panel` (`--r-lg`) anchored at the top-inline-start of the editor sheet (opposite the toolbar pill at top-inline-end so the two never overlap on desktop, stacking cleanly below the toolbar on narrow viewports). Opened by `Ctrl+F` (instant, 0ms animation — §5) or the toolbar search button (`popIn`, `springUI`). Contains a search input (`dir` from `useTextDirection`), a live match counter in Persian numerals (`۲ از ۷` or `بدون نتیجه`, `aria-live="polite"`), previous/next buttons (`Enter` / `Shift+Enter`), toggles for exact match (`Aa`) and whole word, and an expandable replace row in `write` mode («جایگزینی» / «همه», routed through the editor's undoable `applyBody` path). `Esc` closes the bar and restores focus and selection to the active match in the editor.
+
+**Match highlight** — inactive matches use `--accent-soft` background with `--ink` text; the active/focused match in the editor uses `--selection` background with a `1px solid var(--accent)` outline (`rounded-[2px]`). In the plain `<textarea>`, highlights render in a synchronized `aria-hidden` backdrop mirror layer sharing the textarea's grid cell and typography; in CodeMirror, via `Decoration.mark`; in Markdown preview, via a post-sanitize DOM text-node pass.
+
 **Settings overlay** — glass `overlay` (§2) over the mandatory scrim, centered, `--r-xl`,
 `max-width: 34rem`, `max-height: min(80vh, 44rem)` with the section list as the single scroll
 container (§2 "one scroll container per region"). Opened by `⌘,`, the navbar gear, or the command
