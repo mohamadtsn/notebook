@@ -72,7 +72,10 @@ update_source() {
 
   before="$(git rev-parse --short HEAD)"
   log "Updating ${branch} from ${upstream} (current commit ${before})"
-  git pull --ff-only --tags
+  if ! git pull --ff-only --tags; then
+    log "Fast-forward failed (upstream history may have diverged); resetting to ${upstream}"
+    git reset --hard "${upstream}"
+  fi
   after="$(git rev-parse --short HEAD)"
 
   if [[ "${before}" == "${after}" ]]; then
