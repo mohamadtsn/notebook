@@ -7,22 +7,65 @@ const BASE = (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 /**
- * The same allowlist the server enforces, restated so a 10 MB upload does not travel
- * before being refused. The server's copy is the one that matters — this one exists to
- * turn a 415 into an instant Persian message instead of a wasted round trip.
+ * Dangerous file extensions that execute directly on desktop operating systems
+ * or trigger scripting hosts. Developer files (.sh, .py, .ts, .ps1, etc.) are allowed.
  */
-export const ALLOWED_MIME = new Set([
-  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/heic',
-  'application/pdf',
-  'text/plain', 'text/csv', 'text/markdown',
-  'application/zip',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+export const DISALLOWED_EXTENSIONS = new Set([
+  'exe', 'dll', 'com', 'scr', 'pif', 'cpl', 'hta', 'msi', 'msp',
+  'bat', 'cmd', 'vbs', 'vbe', 'wsf', 'wsh',
+  'reg', 'inf', 'lnk',
+  'dmg', 'pkg', 'apk',
 ]);
+
+export const DISALLOWED_MIME = new Set([
+  'application/x-msdownload',
+  'application/x-msdos-program',
+  'application/x-executable',
+  'application/x-dosexec',
+  'application/x-bat',
+  'application/vnd.microsoft.portable-executable',
+]);
+
+export const BROWSER_EXECUTABLE_EXTENSIONS = new Set([
+  'html', 'htm', 'xhtml', 'svg', 'svgz',
+]);
+
+export const BROWSER_EXECUTABLE_MIME = new Set([
+  'text/html', 'image/svg+xml', 'application/xhtml+xml',
+]);
+
+const RTLO_AND_BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/g;
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\x00-\x1F\x7F]/g;
+
+export function sanitizeFilename(raw: string): string {
+  const cleaned = raw
+    .replace(RTLO_AND_BIDI_CONTROLS, '')
+    .replace(CONTROL_CHARS, '')
+    .trim();
+  return (cleaned || 'file').slice(0, 255);
+}
+
+export function getFileExtension(filename: string): string {
+  const clean = sanitizeFilename(filename);
+  const lastDot = clean.lastIndexOf('.');
+  if (lastDot === -1 || lastDot === clean.length - 1) return '';
+  return clean.slice(lastDot + 1).toLowerCase();
+}
+
+export function isDangerousFile(filename: string, mime?: string): boolean {
+  const ext = getFileExtension(filename);
+  if (ext && DISALLOWED_EXTENSIONS.has(ext)) return true;
+  if (mime && DISALLOWED_MIME.has(mime.toLowerCase())) return true;
+  return false;
+}
+
+export function isBrowserExecutable(filename: string, mime?: string): boolean {
+  const ext = getFileExtension(filename);
+  if (ext && BROWSER_EXECUTABLE_EXTENSIONS.has(ext)) return true;
+  if (mime && BROWSER_EXECUTABLE_MIME.has(mime.toLowerCase())) return true;
+  return false;
+}
 
 export type AttachmentErrorKind =
   | 'too_large' | 'unsupported' | 'quota' | 'too_many' | 'tier_required' | 'offline' | 'failed';
@@ -38,7 +81,7 @@ export class AttachmentError extends Error {
 /** One plain Persian sentence per failure — never a status code. DESIGN.md §6. */
 export const ATTACHMENT_MESSAGES: Record<AttachmentErrorKind, string> = {
   too_large: 'حجم فایل بیش از ۱۰ مگابایت است.',
-  unsupported: 'این نوع فایل پشتیبانی نمی‌شود.',
+  unsupported: 'بارگذاری این نوع فایل به دلایل امنیتی مجاز نیست.',
   quota: 'فضای ذخیره‌سازی حساب شما پر شده است.',
   too_many: 'برای هر یادداشت حداکثر ۲۰ فایل می‌توان افزود.',
   tier_required: 'حساب شما به پیوست فایل دسترسی ندارد.',
@@ -49,7 +92,7 @@ export const ATTACHMENT_MESSAGES: Record<AttachmentErrorKind, string> = {
 /** Refused locally, before a byte travels. The server checks all of this again. */
 export function precheck(file: File): AttachmentErrorKind | null {
   if (file.size > MAX_FILE_BYTES) return 'too_large';
-  if (!ALLOWED_MIME.has(file.type)) return 'unsupported';
+  if (isDangerousFile(file.name, file.type)) return 'unsupported';
   return null;
 }
 
