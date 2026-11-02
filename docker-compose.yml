@@ -2,6 +2,7 @@ services:
   server:
     build: ./server
     restart: unless-stopped
+    init: true
     # Runs as the host user so the bind-mounted ./data stays writable and the files
     # it creates are owned by you, not root. UID/GID come from .env — the shell
     # never exports them, so without .env this silently falls back to 1000:1000 and
@@ -57,4 +58,5 @@ services:
     ports:
       - "${FRONTEND_PORT:-80}:80"
     depends_on:
-      - frontend-build
+      frontend-build:
+        condition: service_completed_successfully

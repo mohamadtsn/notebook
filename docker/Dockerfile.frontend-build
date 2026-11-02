@@ -5,18 +5,15 @@
 # build is shadowed and never reaches the host.
 FROM node:24-alpine
 WORKDIR /app
+
+# Cache dependency layer (requires devDependencies for build tools like tsc and vite)
 COPY package.json package-lock.json ./
 RUN npm ci
-# The source lives in the image, so the image is a build artifact of the commit.
-# Deploys must therefore run `docker compose run --rm --build frontend-build` —
-# without --build, Compose reuses the old image and quietly rebuilds the previous
-# commit's source into ./dist.
+
+# Source files (filtered by .dockerignore)
 COPY . .
-# Compose runs this as the host's uid so ./dist stays host-owned, but that uid does
-# not exist in the image and /app is root-owned — `tsc -b` needs to write its
-# tsbuildinfo. Throwaway build container, so widening the whole tree is fine.
-RUN chmod -R a+rwX /app
-# VITE_API_URL comes from compose as an environment variable — Vite picks up any
-# VITE_-prefixed var from the process env, so .env (and JWT_SECRET) stays out of
-# the image.
+
+# Grant write permissions on /app and /app/node_modules so non-root host UID can write build artifacts (.tmp/tsbuildinfo)
+RUN chmod 777 /app /app/node_modules
+
 CMD ["npm", "run", "build"]

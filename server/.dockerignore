@@ -3,3 +3,9 @@ test
 data
 *.db
 *.db-*
+.env
+*.local
+.git
+.vscode
+.idea
+*.log
