@@ -19,7 +19,7 @@ import {
 } from './history.ts';
 import { deviceLabel } from './device.ts';
 import {
-  normalizeWithMap, findMatches, replaceMatches, buildSnippet, searchNotes,
+  normalizeWithMap, findMatches, replaceMatches, buildSnippet, searchNotes, isShortcutKey,
 } from './search.ts';
 import { JSDOM } from 'jsdom';
 
@@ -630,5 +630,13 @@ assert.ok(ranked[1].bodyMatchCount > 0, 'body match count must be populated');
 const normSample = normalizeWithMap('آزمونِ ۱۲');
 assert.equal(normSample.normalized, 'ازمون 12');
 assert.equal(normSample.map.length, normSample.normalized.length + 1);
+
+// 10. isShortcutKey matches both physical e.code and Persian/Latin e.key values
+assert.equal(isShortcutKey({ code: 'KeyF', key: 'ب' }, 'KeyF', 'f', 'ب', 'إ'), true, 'Persian layout Ctrl+F (KeyF / ب) must match');
+assert.equal(isShortcutKey({ code: '', key: 'ب' }, 'KeyF', 'f', 'ب', 'إ'), true, 'Persian layout without e.code must still match via key');
+assert.equal(isShortcutKey({ code: 'KeyK', key: 'ن' }, 'KeyK', 'k', 'ن', '«'), true, 'Persian layout Ctrl+K (KeyK / ن) must match');
+assert.equal(isShortcutKey({ code: 'KeyN', key: 'د' }, 'KeyN', 'n', 'د', 'أ'), true, 'Persian layout Ctrl+N (KeyN / د) must match');
+assert.equal(isShortcutKey({ code: 'Comma', key: 'و' }, 'Comma', ',', 'و', '<'), true, 'Persian layout Ctrl+, (Comma / و) must match');
+assert.equal(isShortcutKey({ code: 'KeyA', key: 'ش' }, 'KeyF', 'f', 'ب', 'إ'), false, 'Different key must not match');
 
 console.log('checks passed');

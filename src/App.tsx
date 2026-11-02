@@ -106,10 +106,15 @@ export default function App() {
   });
 
   const focusSidebarSearch = useCallback(() => {
-    setSidebarOpen(true);
+    if (!window.matchMedia('(min-width: 768px)').matches) {
+      setSidebarOpen(true);
+    }
     requestAnimationFrame(() => {
-      sidebarSearchInputRef.current?.focus();
-      sidebarSearchInputRef.current?.select();
+      const inputs = document.querySelectorAll<HTMLInputElement>('[data-sidebar-search="true"]');
+      const visible =
+        Array.from(inputs).find(el => el.getClientRects().length > 0) ?? sidebarSearchInputRef.current;
+      visible?.focus();
+      visible?.select();
     });
   }, []);
 

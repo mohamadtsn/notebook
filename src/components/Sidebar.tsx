@@ -57,7 +57,7 @@ interface SidebarProps {
 
 export function Sidebar({
   notes, trashedNotes, activeNoteId, view, onViewChange, onSelect, onSelectSearchResult,
-  onOpenSearch, searchQuery: controlledQuery, onSearchQueryChange, searchInputRef,
+  searchQuery: controlledQuery, onSearchQueryChange, searchInputRef,
   groups, groupCounts, selectedGroup, onSelectGroup, onCreateGroup, onRenameGroup, onDeleteGroup,
   onMoveNote, onTogglePin, onTrashNote, onRestoreNote, onPermanentDelete,
 }: SidebarProps) {
@@ -174,17 +174,19 @@ export function Sidebar({
         )}
 
         <div className="flex items-center gap-1 px-3 pb-2 pt-2">
-          <div
+          <label
             className={cx(
-              'flex min-h-10 flex-1 items-center gap-1.5 rounded-lg bg-fill px-2.5',
-              'transition-[box-shadow,border-color] duration-(--d-fast)',
-              'focus-within:ring-2 focus-within:ring-accent focus-within:shadow-[0_0_0_4px_var(--accent-soft)]',
+              'group flex min-w-0 flex-1 cursor-text items-center gap-2 rounded-lg bg-fill px-3 py-2',
+              'ring-1 ring-transparent transition-[background-color,box-shadow] duration-(--d-fast) ease-(--ease-out-strong)',
+              'focus-within:bg-surface focus-within:ring-2 focus-within:ring-accent focus-within:shadow-[0_0_0_4px_var(--accent-soft)]',
             )}
           >
             <Search size={14} className="shrink-0 text-muted" aria-hidden="true" />
             <input
               ref={inputRef}
-              type="search"
+              data-sidebar-search="true"
+              type="text"
+              size={1}
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => {
@@ -204,32 +206,27 @@ export function Sidebar({
               dir={query ? queryDir : 'rtl'}
               placeholder={view === 'trash' ? 'جستجو در سطل زباله…' : 'جستجو…'}
               aria-label="جستجو در لیست یادداشت‌ها"
-              className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-ink outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:hidden"
+              className="w-full min-w-0 flex-1 bg-transparent text-right text-sm text-ink outline-none placeholder:text-right placeholder:text-muted"
             />
             {query ? (
               <button
                 type="button"
+                onMouseDown={e => e.preventDefault()}
                 onClick={() => {
                   setQuery('');
                   inputRef.current?.focus();
                 }}
                 aria-label="پاک کردن جستجو"
-                className="relative flex size-6 shrink-0 items-center justify-center rounded-md text-muted transition-[color,transform] duration-(--d-press) hover:text-ink active:scale-[0.97] after:absolute after:-inset-2 after:content-['']"
+                className="flex size-5 shrink-0 items-center justify-center rounded text-muted transition-[color,transform] duration-(--d-press) hover:text-ink focus-visible:outline-none active:scale-[0.97]"
               >
                 <X size={14} />
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={onOpenSearch}
-                aria-label="باز کردن پالت دستورها (Ctrl+K)"
-                title="پالت دستورها (Ctrl+K)"
-                className="relative shrink-0 rounded border border-separator bg-surface/60 px-1.5 py-0.5 font-mono text-[.6875rem] text-muted transition-[color,transform] duration-(--d-press) hover:text-ink active:scale-[0.97] after:absolute after:-inset-2 after:content-['']"
-              >
+              <kbd className="pointer-events-none shrink-0 font-mono text-[.6875rem] text-muted group-focus-within:hidden">
                 Ctrl K
-              </button>
+              </kbd>
             )}
-          </div>
+          </label>
 
           <IconButton label={current.label} onClick={cycleSort}>
             <SortIcon size={16} />

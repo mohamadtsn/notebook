@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isShortcutKey } from '../utils/search';
 
 interface Options {
   onNewNote: () => void;
@@ -26,32 +27,48 @@ export function useKeyboardShortcuts({
     const handler = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
 
-      if (ctrl && e.key === 'n') {
+      if (ctrl && !e.shiftKey && !e.altKey && isShortcutKey(e, 'KeyN', 'n', 'د', 'أ')) {
         e.preventDefault();
         onNewNote();
+        return;
       }
 
-      if (ctrl && e.key === 'k') {
+      if (ctrl && !e.shiftKey && !e.altKey && isShortcutKey(e, 'KeyK', 'k', 'ن', '«')) {
         e.preventDefault();
         onOpenPalette();
+        return;
       }
 
-      if (ctrl && e.shiftKey && (e.key === 'f' || e.key === 'F') && onFocusSidebarSearch) {
+      if (ctrl && e.shiftKey && !e.altKey && isShortcutKey(e, 'KeyF', 'f', 'ب', 'إ') && onFocusSidebarSearch) {
         e.preventDefault();
         onFocusSidebarSearch();
+        return;
       }
 
-      if (ctrl && e.key === ',') {
+      // When no note is open (`Editor` did not claim Ctrl+F in capture phase), route
+      // Ctrl+F to the sidebar search field instead of letting the browser open its own find bar.
+      if (ctrl && !e.shiftKey && !e.altKey && isShortcutKey(e, 'KeyF', 'f', 'ب', 'إ')) {
+        if (e.defaultPrevented) return;
+        e.preventDefault();
+        if (!document.querySelector('[role="dialog"]') && onFocusSidebarSearch) {
+          onFocusSidebarSearch();
+        }
+        return;
+      }
+
+      if (ctrl && !e.shiftKey && !e.altKey && isShortcutKey(e, 'Comma', ',', 'و', '<')) {
         e.preventDefault();
         onOpenSettings();
+        return;
       }
 
       // No modifier, so this one has to yield to anyone typing — otherwise a «?» in a
       // note opens a panel instead of landing in the text. Same dialog guard as Escape.
-      if (e.key === '?' && !ctrl && !isWriting(document.activeElement)
+      if ((e.key === '?' || e.key === '؟') && !ctrl && !e.altKey && !isWriting(document.activeElement)
           && !document.querySelector('[role="dialog"]')) {
         e.preventDefault();
         onOpenShortcuts();
+        return;
       }
 
       if (e.key === 'Escape') {

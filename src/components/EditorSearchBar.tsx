@@ -71,6 +71,7 @@ export function EditorSearchBar({
         <input
           ref={inputRef}
           type="text"
+          size={1}
           value={query}
           onChange={e => onQueryChange(e.target.value)}
           onKeyDown={e => {
@@ -83,7 +84,7 @@ export function EditorSearchBar({
           dir={query ? queryDir : 'rtl'}
           placeholder="جستجو در متن یادداشت…"
           aria-label="جستجو در متن یادداشت"
-          className="min-w-36 flex-1 bg-transparent py-1 text-sm text-ink outline-none placeholder:text-muted"
+          className="min-w-28 flex-1 bg-transparent py-1 text-right text-sm text-ink outline-none placeholder:text-right placeholder:text-muted"
         />
 
         <span aria-live="polite" className="shrink-0 px-1.5 text-xs tabular-nums">

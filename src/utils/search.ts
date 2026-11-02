@@ -418,3 +418,22 @@ export function searchNotes(
 
   return results.sort((a, b) => b.score - a.score || b.note.updatedAt - a.note.updatedAt);
 }
+
+/**
+ * Matches a keyboard shortcut across both physical QWERTY key positions (`e.code`,
+ * e.g. `'KeyF'`, `'KeyK'`) and layout-produced characters (`e.key`, including
+ * Persian layout characters like `'ب'` on `KeyF` or `'ن'` on `KeyK`).
+ *
+ * Without this, pressing `Ctrl+F` or `Ctrl+K` while the OS keyboard is set to
+ * Persian produces `e.key === 'ب'` / `'ن'`, which misses ASCII `e.key === 'f'`
+ * checks and lets the browser hijack the shortcut for its native search bar.
+ */
+export function isShortcutKey(
+  e: { code?: string; key: string },
+  code: string,
+  ...keys: string[]
+): boolean {
+  if (e.code === code) return true;
+  const lower = e.key.toLowerCase();
+  return keys.includes(lower) || keys.includes(e.key);
+}
