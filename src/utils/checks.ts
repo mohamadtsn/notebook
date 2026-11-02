@@ -33,6 +33,9 @@ import { toWireGroup, orderBetween } from '../types/group.ts';
 import {
   formatBytes, migrateAttachments, toWireAttachment, type Attachment, type WireAttachment,
 } from '../types/attachment.ts';
+import {
+  isDangerousFile, isBrowserExecutable, sanitizeFilename, getFileExtension, precheck,
+} from './attachments.ts';
 import type { Group } from '../types/group.ts';
 
 // ── Note label migration (PLAN-V2 Phase 1.3) ────────────────────────
@@ -289,6 +292,48 @@ assert.equal(migrated[0].dirty, false);
 assert.equal(formatBytes(512), '512 بایت');
 assert.equal(formatBytes(2048), '2 کیلوبایت');
 assert.equal(formatBytes(3 * 1024 * 1024), '3.0 مگابایت');
+
+// Filename sanitization & RTLO stripping
+assert.equal(sanitizeFilename('report\u202Ecod.exe'), 'reportcod.exe');
+assert.equal(sanitizeFilename('file\0bad.txt'), 'filebad.txt');
+assert.equal(sanitizeFilename('   normal.ts   '), 'normal.ts');
+assert.equal(sanitizeFilename(''), 'file');
+
+// Extension extraction
+assert.equal(getFileExtension('archive.tar.gz'), 'gz');
+assert.equal(getFileExtension('config.yaml'), 'yaml');
+assert.equal(getFileExtension('noext'), '');
+assert.equal(getFileExtension('.env'), 'env');
+
+// Dangerous file detection
+assert.equal(isDangerousFile('malware.exe'), true);
+assert.equal(isDangerousFile('setup.msi'), true);
+assert.equal(isDangerousFile('script.bat'), true);
+assert.equal(isDangerousFile('macro.vbs'), true);
+assert.equal(isDangerousFile('fake.png', 'application/x-msdownload'), true);
+
+// Developer files are safe
+assert.equal(isDangerousFile('test.sh'), false);
+assert.equal(isDangerousFile('script.py'), false);
+assert.equal(isDangerousFile('query.sql'), false);
+assert.equal(isDangerousFile('config.yaml'), false);
+assert.equal(isDangerousFile('app.ts'), false);
+assert.equal(isDangerousFile('.env'), false);
+assert.equal(isDangerousFile('main.rs'), false);
+assert.equal(isDangerousFile('data.sqlite'), false);
+
+// Web files are not blocked by isDangerousFile, but identified as browser-executable
+assert.equal(isDangerousFile('index.html'), false);
+assert.equal(isDangerousFile('logo.svg'), false);
+assert.equal(isBrowserExecutable('index.html'), true);
+assert.equal(isBrowserExecutable('logo.svg'), true);
+assert.equal(isBrowserExecutable('app.ts'), false);
+
+// Precheck integration
+const fakeFile = (name: string, size = 100, type = '') => ({ name, size, type } as unknown as File);
+assert.equal(precheck(fakeFile('run.exe')), 'unsupported');
+assert.equal(precheck(fakeFile('script.sh', 100, 'text/x-sh')), null);
+assert.equal(precheck(fakeFile('data.json', 100, 'application/json')), null);
 
 // ── Settings migration (v3 Phase 0.2) ───────────────────────────────
 // Nothing stored yet → every field comes from the defaults.

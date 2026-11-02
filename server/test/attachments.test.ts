@@ -98,12 +98,44 @@ test('a pro account uploads, lists and downloads', async () => {
   assert.equal(file.headers['x-content-type-options'], 'nosniff');
 });
 
-test('an unlisted mime type is refused with 415', async () => {
+test('dangerous executable files are refused with 415', async () => {
   const { register, upload } = await fresh();
   const a = await register('pro@example.com');
-  for (const mime of ['text/html', 'image/svg+xml', 'application/x-sh']) {
-    const res = await upload(a, { mime, filename: 'x' });
-    assert.equal(res.statusCode, 415, mime);
+
+  // Refused by extension
+  for (const filename of ['malware.exe', 'setup.msi', 'evil.bat', 'script.cmd', 'macro.vbs', 'hack.reg']) {
+    const res = await upload(a, { filename, mime: 'application/octet-stream' });
+    assert.equal(res.statusCode, 415, `expected 415 for ${filename}`);
+  }
+
+  // Refused by dangerous MIME even with innocent extension
+  const resMime = await upload(a, { filename: 'innocent.png', mime: 'application/x-msdownload' });
+  assert.equal(resMime.statusCode, 415, 'expected 415 for application/x-msdownload');
+
+  // Refused when using RTLO character trick
+  const resRtlo = await upload(a, { filename: 'invoice\u202Ecod.exe', mime: 'application/octet-stream' });
+  assert.equal(resRtlo.statusCode, 415, 'expected 415 for RTLO .exe disguise');
+});
+
+test('developer and code files are accepted with 200', async () => {
+  const { register, upload } = await fresh();
+  const a = await register('pro@example.com');
+
+  const devFiles = [
+    { filename: 'script.sh', mime: 'text/x-sh', bytes: Buffer.from('#!/bin/bash\necho 1') },
+    { filename: 'app.py', mime: 'text/x-python', bytes: Buffer.from('print(1)') },
+    { filename: 'query.sql', mime: 'application/sql', bytes: Buffer.from('SELECT 1;') },
+    { filename: 'config.yaml', mime: 'text/yaml', bytes: Buffer.from('key: value') },
+    { filename: 'main.ts', mime: '', bytes: Buffer.from('const x: number = 1;') },
+    { filename: 'database.sqlite', mime: 'application/octet-stream', bytes: Buffer.from('SQLite format 3\0') },
+    { filename: 'archive.tar.gz', mime: 'application/gzip', bytes: Buffer.from('mock gzip') },
+  ];
+
+  for (const f of devFiles) {
+    const res = await upload(a, f);
+    assert.equal(res.statusCode, 200, `expected 200 for ${f.filename}: ${res.body}`);
+    const body = res.json();
+    assert.equal(body.name, f.filename);
   }
 });
 
@@ -247,4 +279,47 @@ test('downloads are not throttled with the credential endpoints', async () => {
     const res = await app.inject({ method: 'GET', url: `/attachments/${id}`, headers: a });
     assert.equal(res.statusCode, 200, `download ${i} answered ${res.statusCode}`);
   }
+});
+
+test('web files (html, svg) are accepted on upload and neutralized on download', async () => {
+  const { app, register, upload } = await fresh();
+  const a = await register('pro@example.com');
+
+  // 1. Upload HTML
+  const htmlRes = await upload(a, {
+    filename: 'test.html',
+    mime: 'text/html',
+    bytes: Buffer.from('<script>alert("xss")</script>'),
+  });
+  assert.equal(htmlRes.statusCode, 200);
+  const htmlId = htmlRes.json().id;
+
+  // 2. Download HTML: must be forced to application/octet-stream with sandbox CSP
+  const htmlDl = await app.inject({ method: 'GET', url: `/attachments/${htmlId}`, headers: a });
+  assert.equal(htmlDl.statusCode, 200);
+  assert.equal(htmlDl.headers['content-type'], 'application/octet-stream');
+  assert.equal(htmlDl.headers['content-security-policy'], "default-src 'none'; sandbox");
+  assert.equal(htmlDl.headers['x-content-type-options'], 'nosniff');
+  assert.match(htmlDl.headers['content-disposition'] as string, /^attachment;/);
+
+  // 3. Upload SVG
+  const svgRes = await upload(a, {
+    filename: 'icon.svg',
+    mime: 'image/svg+xml',
+    bytes: Buffer.from('<svg><script>alert(1)</script></svg>'),
+  });
+  assert.equal(svgRes.statusCode, 200);
+  const svgId = svgRes.json().id;
+
+  // 4. Download SVG: must be forced to application/octet-stream with sandbox CSP
+  const svgDl = await app.inject({ method: 'GET', url: `/attachments/${svgId}`, headers: a });
+  assert.equal(svgDl.statusCode, 200);
+  assert.equal(svgDl.headers['content-type'], 'application/octet-stream');
+  assert.equal(svgDl.headers['content-security-policy'], "default-src 'none'; sandbox");
+
+  // 5. Download non-web file (e.g. PDF or text): retains standard content-type and no sandbox CSP needed
+  const pdfRes = await upload(a, { filename: 'doc.pdf', mime: 'application/pdf', bytes: Buffer.from('%PDF-1.4') });
+  const pdfDl = await app.inject({ method: 'GET', url: `/attachments/${pdfRes.json().id}`, headers: a });
+  assert.equal(pdfDl.headers['content-type'], 'application/pdf');
+  assert.equal(pdfDl.headers['content-security-policy'], undefined);
 });

@@ -16,24 +16,64 @@ export const MAX_USER_BYTES = 200 * 1024 * 1024;
 export const MAX_PER_NOTE = 20;
 
 /**
- * An allowlist, never a blocklist: the unknown case has to be the refused one.
- *
- * `text/html` and `image/svg+xml` are absent deliberately — both are scriptable, and
- * although every download is served `Content-Disposition: attachment` with `nosniff`,
- * a type that becomes a page if it ever reaches a browser tab is not worth storing.
+ * Dangerous file extensions that execute directly on desktop operating systems
+ * or trigger scripting hosts. Developer files (.sh, .py, .ts, .ps1, etc.) are allowed.
  */
-const ALLOWED_MIME = new Set([
-  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/heic',
-  'application/pdf',
-  'text/plain', 'text/csv', 'text/markdown',
-  'application/zip',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+export const DISALLOWED_EXTENSIONS = new Set([
+  'exe', 'dll', 'com', 'scr', 'pif', 'cpl', 'hta', 'msi', 'msp',
+  'bat', 'cmd', 'vbs', 'vbe', 'wsf', 'wsh',
+  'reg', 'inf', 'lnk',
+  'dmg', 'pkg', 'apk',
 ]);
+
+export const DISALLOWED_MIME = new Set([
+  'application/x-msdownload',
+  'application/x-msdos-program',
+  'application/x-executable',
+  'application/x-dosexec',
+  'application/x-bat',
+  'application/vnd.microsoft.portable-executable',
+]);
+
+export const BROWSER_EXECUTABLE_EXTENSIONS = new Set([
+  'html', 'htm', 'xhtml', 'svg', 'svgz',
+]);
+
+export const BROWSER_EXECUTABLE_MIME = new Set([
+  'text/html', 'image/svg+xml', 'application/xhtml+xml',
+]);
+
+const RTLO_AND_BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/g;
+const CONTROL_CHARS = /[\x00-\x1F\x7F]/g;
+
+export function sanitizeFilename(raw: string): string {
+  const cleaned = raw
+    .replace(RTLO_AND_BIDI_CONTROLS, '')
+    .replace(CONTROL_CHARS, '')
+    .trim();
+  return (cleaned || 'file').slice(0, 255);
+}
+
+export function getFileExtension(filename: string): string {
+  const clean = sanitizeFilename(filename);
+  const lastDot = clean.lastIndexOf('.');
+  if (lastDot === -1 || lastDot === clean.length - 1) return '';
+  return clean.slice(lastDot + 1).toLowerCase();
+}
+
+export function isDangerousFile(filename: string, mime?: string): boolean {
+  const ext = getFileExtension(filename);
+  if (ext && DISALLOWED_EXTENSIONS.has(ext)) return true;
+  if (mime && DISALLOWED_MIME.has(mime.toLowerCase())) return true;
+  return false;
+}
+
+export function isBrowserExecutable(filename: string, mime?: string): boolean {
+  const ext = getFileExtension(filename);
+  if (ext && BROWSER_EXECUTABLE_EXTENSIONS.has(ext)) return true;
+  if (mime && BROWSER_EXECUTABLE_MIME.has(mime.toLowerCase())) return true;
+  return false;
+}
 
 const MAX_NAME = 255;
 const UUID = '^[0-9a-fA-F-]{36}$';
@@ -123,8 +163,9 @@ export async function attachmentRoutes(app: FastifyInstance, db: Db, root: strin
       return reply.code(400).send({ error: 'noteId is required' });
     }
 
-    if (!ALLOWED_MIME.has(part.mimetype)) {
-      return reply.code(415).send({ error: 'unsupported media type' });
+    const rawName = part.filename || 'file';
+    if (isDangerousFile(rawName, part.mimetype)) {
+      return reply.code(415).send({ error: 'disallowed file type' });
     }
     if ((countForNote.get(uid, noteId) as { n: number }).n >= MAX_PER_NOTE) {
       return reply.code(409).send({ error: 'too many attachments on this note' });
@@ -164,7 +205,7 @@ export async function attachmentRoutes(app: FastifyInstance, db: Db, root: strin
 
     // The stored filename is the uuid. `name` is metadata shown to the user and is
     // never joined into a path.
-    const name = (part.filename || 'file').slice(0, MAX_NAME);
+    const name = sanitizeFilename(rawName).slice(0, MAX_NAME);
     const now = Date.now();
     insert.run(id, uid, noteId, name, part.mimetype, size, now, now);
     return { id, noteId, name, mime: part.mimetype, size, createdAt: now };
@@ -197,14 +238,22 @@ export async function attachmentRoutes(app: FastifyInstance, db: Db, root: strin
     // 404, not 403: another account's id must not be distinguishable from a made-up one.
     if (!row) return reply.code(404).send({ error: 'not found' });
 
-    return reply
-      .header('content-type', row.mime)
+    const isExecutable = isBrowserExecutable(row.name, row.mime);
+    const contentType = isExecutable ? 'application/octet-stream' : (row.mime || 'application/octet-stream');
+
+    let res = reply
+      .header('content-type', contentType)
       .header('content-length', String(row.size))
       // Never inline. The mime is client-declared, and a download that renders as a page
       // in this origin would be a stored-XSS delivery mechanism.
       .header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(row.name)}`)
-      .header('x-content-type-options', 'nosniff')
-      .send(createReadStream(blobPath(root, uid, id)));
+      .header('x-content-type-options', 'nosniff');
+
+    if (isExecutable) {
+      res = res.header('content-security-policy', "default-src 'none'; sandbox");
+    }
+
+    return res.send(createReadStream(blobPath(root, uid, id)));
   });
 
   app.delete('/attachments/:id', {
