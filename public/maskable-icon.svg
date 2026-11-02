@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg-mask" x1="460" y1="32" x2="52" y2="480" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1186A6"/>
+      <stop offset="0.55" stop-color="#0E7490"/>
+      <stop offset="1" stop-color="#084C61"/>
+    </linearGradient>
+    <linearGradient id="paper-mask" x1="340" y1="132" x2="164" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F5F5F0"/>
+    </linearGradient>
+    <linearGradient id="spine-mask" x1="356" y1="132" x2="314" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#073B4C"/>
+      <stop offset="1" stop-color="#052935"/>
+    </linearGradient>
+    <filter id="shadow-mask" x="110" y="108" width="292" height="316" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#04222C" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+
+  <!-- Full-bleed background for Android/iOS maskable icon safe zone -->
+  <rect width="512" height="512" fill="url(#bg-mask)"/>
+
+  <!-- Scaled to 82% within the central 80% maskable safe zone -->
+  <g transform="translate(256 252) scale(0.82) translate(-256 -256)" filter="url(#shadow-mask)">
+    <rect x="132" y="118" width="232" height="276" rx="28" fill="#DCE8EB" opacity="0.72"/>
+    <path d="M182 376H218V424L200 411L182 424V376Z" fill="#D9C89E"/>
+    <path
+      d="M196 104H346C362.569 104 376 117.431 376 134V374C376 390.569 362.569 404 346 404H174C157.431 404 144 390.569 144 374V156L196 104Z"
+      fill="url(#paper-mask)"
+    />
+    <path
+      d="M196 104V140C196 148.837 188.837 156 180 156H144L196 104Z"
+      fill="#DFE8EA"
+    />
+    <path
+      d="M328 104H346C362.569 104 376 117.431 376 134V374C376 390.569 362.569 404 346 404H328V104Z"
+      fill="url(#spine-mask)"
+    />
+    <rect x="345" y="152" width="14" height="24" rx="7" fill="#F5F5F0" fill-opacity="0.92"/>
+    <rect x="345" y="242" width="14" height="24" rx="7" fill="#F5F5F0" fill-opacity="0.92"/>
+    <rect x="345" y="332" width="14" height="24" rx="7" fill="#F5F5F0" fill-opacity="0.92"/>
+    <circle cx="298" cy="176" r="7" fill="#D9C89E"/>
+    <rect x="206" y="169" width="76" height="14" rx="7" fill="#0E7490"/>
+    <rect x="177" y="218" width="128" height="12" rx="6" fill="#0F172A" fill-opacity="0.28"/>
+    <rect x="193" y="254" width="112" height="12" rx="6" fill="#0F172A" fill-opacity="0.28"/>
+    <rect x="225" y="290" width="80" height="12" rx="6" fill="#0F172A" fill-opacity="0.20"/>
+  </g>
+</svg>
