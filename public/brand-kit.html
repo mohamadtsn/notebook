@@ -154,7 +154,7 @@
       margin-top: 2px;
     }
 
-    /* Panel 2: Architectural Construction Grid (Dark Teal Blueprint) */
+    /* Panel 2: Maskable icon safe area */
     .p-blueprint {
       grid-column: span 4;
       min-height: 360px;
@@ -171,6 +171,11 @@
       align-items: center;
       justify-content: center;
       flex: 1;
+    }
+
+    .blueprint-stage svg {
+      max-width: 100%;
+      height: auto;
     }
 
     /* Panel 3: Optical Scale Ladder (Dark Surface) */
@@ -405,7 +410,7 @@
     <header class="deck-header">
       <div class="deck-title">
         <h1>دفترچه — سیستم هویت بصری و پک آیکون</h1>
-        <span>مفهوم طراحی: «شیرازهٔ راست‌به‌چپ، ورقِ کاغذ گرم و نشانک شنی»</span>
+        <span>مفهوم طراحی: «شیرازهٔ راست‌به‌چپ، ورقِ کاغذ گرم و نشانک زعفرانی»</span>
       </div>
       <div class="deck-meta">BRAND SYSTEM · RTL-FIRST · DESIGN.MD §1–§6</div>
     </header>
@@ -415,64 +420,32 @@
       <section class="panel p-hero">
         <div class="panel-tag">
           <span>۰۱ · نماد اصلی برنامه (App Icon)</span>
-          <code>512 × 512 · rx=116</code>
+          <code>512 × 512</code>
         </div>
         <div class="hero-center">
           <img src="./app-icon.svg" alt="آیکون دفترچه" />
           <div class="hero-caption">
             <h2>دفترچه</h2>
-            <p>شیرازه در لبهٔ راست (RTL)، تاخوردگی گوشهٔ برگ و نشانک کهربایی</p>
+            <p>شیرازه در لبهٔ راست (RTL)، برگ در حال ورق خوردن و نشانک زعفرانی</p>
           </div>
         </div>
         <div class="panel-tag">
           <span>پالت کاغذ گرم و فیروزه‌ای عمیق</span>
-          <code>#0E7490 · #F5F5F0 · #D9C89E</code>
+          <code>#07535E · #F5EBD6 · #E6A936</code>
         </div>
       </section>
 
-      <!-- 02: Geometric Construction Blueprint -->
+      <!-- 02: Maskable icon safe area -->
       <section class="panel p-blueprint">
         <div class="panel-tag">
-          <span>۰۲ · هندسه و شبکهٔ تناسبات (Construction Grid)</span>
-          <code>GOLDEN &amp; RTL AXIS</code>
+          <span>۰۲ · محدودهٔ امن آیکون اندروید</span>
+          <code>80% SAFE ZONE</code>
         </div>
         <div class="blueprint-stage">
-          <svg width="248" height="248" viewBox="0 0 512 512" fill="none">
-            <!-- Construction grid lines -->
-            <rect x="2" y="2" width="508" height="508" rx="114" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="2" stroke-dasharray="6 6"/>
-            <circle cx="256" cy="256" r="204" stroke="#22B8CF" stroke-opacity="0.32" stroke-width="1.5"/>
-            <circle cx="256" cy="256" r="142" stroke="#22B8CF" stroke-opacity="0.22" stroke-width="1.5" stroke-dasharray="4 4"/>
-            <line x1="144" y1="0" x2="144" y2="512" stroke="#22B8CF" stroke-opacity="0.28" stroke-width="1.5"/>
-            <line x1="328" y1="0" x2="328" y2="512" stroke="#D9C89E" stroke-opacity="0.55" stroke-width="1.5"/>
-            <line x1="376" y1="0" x2="376" y2="512" stroke="#D9C89E" stroke-opacity="0.55" stroke-width="1.5"/>
-            <line x1="0" y1="104" x2="512" y2="104" stroke="#22B8CF" stroke-opacity="0.28" stroke-width="1.5"/>
-            <line x1="0" y1="404" x2="512" y2="404" stroke="#22B8CF" stroke-opacity="0.28" stroke-width="1.5"/>
-            <line x1="112" y1="188" x2="228" y2="72" stroke="#D9C89E" stroke-opacity="0.65" stroke-width="1.5"/>
-
-            <!-- Wireframe notebook silhouette -->
-            <rect x="132" y="118" width="232" height="276" rx="28" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="2"/>
-            <path d="M182 376H218V424L200 411L182 424V376Z" fill="#D9C89E" fill-opacity="0.35" stroke="#D9C89E" stroke-width="2.5"/>
-            <path
-              d="M196 104H346C362.569 104 376 117.431 376 134V374C376 390.569 362.569 404 346 404H174C157.431 404 144 390.569 144 374V156L196 104Z"
-              fill="#FFFFFF"
-              fill-opacity="0.08"
-              stroke="#FFFFFF"
-              stroke-width="3"
-            />
-            <path d="M196 104V140C196 148.837 188.837 156 180 156H144L196 104Z" stroke="#22B8CF" stroke-width="2.5"/>
-            <rect x="345" y="152" width="14" height="24" rx="7" stroke="#D9C89E" stroke-width="2"/>
-            <rect x="345" y="242" width="14" height="24" rx="7" stroke="#D9C89E" stroke-width="2"/>
-            <rect x="345" y="332" width="14" height="24" rx="7" stroke="#D9C89E" stroke-width="2"/>
-            <circle cx="298" cy="176" r="7" fill="#D9C89E"/>
-            <rect x="206" y="169" width="76" height="14" rx="7" stroke="#FFFFFF" stroke-width="2"/>
-            <rect x="177" y="218" width="128" height="12" rx="6" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="2"/>
-            <rect x="193" y="254" width="112" height="12" rx="6" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="2"/>
-            <rect x="225" y="290" width="80" height="12" rx="6" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="2"/>
+          <svg width="248" height="248" viewBox="0 0 512 512" role="img" aria-label="آیکون اندروید با محدودهٔ امن دایره‌ای">
+            <image href="./maskable-icon-512x512.png" width="512" height="512" />
+            <circle cx="256" cy="256" r="204.8" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-dasharray="8 6" />
           </svg>
-        </div>
-        <div class="panel-tag">
-          <span>تراز خطوط از محور راست (x=305)</span>
-          <code>45° PAGE CHAMFER</code>
         </div>
       </section>
 
@@ -593,7 +566,7 @@
         </div>
         <div class="asset-list">
           <a class="asset-link" href="./app-icon.svg" download>
-            <span>آیکون اصلی (وکتور)</span>
+            <span>آیکون اصلی (SVG)</span>
             <code>app-icon.svg</code>
           </a>
           <a class="asset-link" href="./logo-mark.svg" download>
@@ -608,12 +581,20 @@
             <span>آیکون نصب PWA (۵۱۲)</span>
             <code>pwa-512x512.png</code>
           </a>
+          <a class="asset-link" href="./apple-touch-icon-180x180.png" download>
+            <span>آیکون صفحهٔ اصلی آیفون (۱۸۰)</span>
+            <code>apple-touch-icon-180x180.png</code>
+          </a>
+          <a class="asset-link" href="./favicon.ico" download>
+            <span>آیکون تب مرورگر</span>
+            <code>favicon.ico</code>
+          </a>
           <a class="asset-link" href="./maskable-icon-512x512.png" download>
             <span>آیکون Maskable سیستم‌عامل</span>
             <code>maskable-icon-512x512.png</code>
           </a>
         </div>
-        <p class="footnote">تمامی فایل‌ها در مانیفست PWA و رابط کاربری برنامه جایگذاری شده‌اند.</p>
+        <p class="footnote">نسخه‌های PNG در مانیفست وب‌اپ و آیکون‌های مرورگر استفاده می‌شوند.</p>
       </section>
     </main>
   </div>
