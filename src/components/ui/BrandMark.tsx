@@ -4,17 +4,6 @@ interface BrandMarkProps {
   className?: string;
 }
 
-/**
- * Custom RTL Persian notebook brand mark («شیرازه و برگ»).
- *
- * Uses semantic CSS custom properties (`--accent`, `--surface`, `--canvas`,
- * `--label-sand`, `--ink`, `--separator`) — never raw hex — so it adapts
- * automatically between light and dark themes (DESIGN.md §1).
- *
- * Optical sizing:
- * - `badge` (32px navbar mark): bold silhouette, crisp spine, and 2 high-contrast lines.
- * - `duotone` (56px empty-state emblem): layered sheets, folded corner, sand bookmark, and 3 lines.
- */
 export function BrandMark({
   size = 32,
   variant = 'badge',
@@ -87,58 +76,12 @@ export function BrandMark({
   }
 
   return (
-    <svg
+    <img
+      src="/pwa-64x64.png"
       width={size}
       height={size}
-      viewBox="0 0 32 32"
-      fill="none"
-      aria-hidden="true"
+      alt=""
       className={className}
-    >
-      {/* Squircle badge chassis */}
-      <rect width="32" height="32" rx="8" fill="var(--accent)" />
-      <rect
-        x="0.5"
-        y="0.5"
-        width="31"
-        height="31"
-        rx="7.5"
-        stroke="var(--glass-edge)"
-        strokeWidth="1"
-      />
-
-      {/* Sand bookmark ribbon at bottom-left */}
-      <path d="M11 23.5H14V27.5L12.5 26.3L11 27.5V23.5Z" fill="var(--label-sand)" />
-
-      {/* Main notebook sheet with top-left fold */}
-      <path
-        d="M12.5 6.5H21.5C22.8807 6.5 24 7.61929 24 9V23C24 24.3807 22.8807 25.5 21.5 25.5H10.5C9.11929 25.5 8 24.3807 8 23V11L12.5 6.5Z"
-        fill="var(--surface)"
-      />
-
-      {/* Top-left folded corner */}
-      <path
-        d="M12.5 6.5V9.5C12.5 10.3284 11.8284 11 11 11H8L12.5 6.5Z"
-        fill="var(--accent-soft)"
-      />
-
-      {/* Right (inline-start) RTL Spine */}
-      <path
-        d="M19.5 6.5H21.5C22.8807 6.5 24 7.61929 24 9V23C24 24.3807 22.8807 25.5 21.5 25.5H19.5V6.5Z"
-        fill="var(--ink)"
-        fillOpacity="0.28"
-      />
-
-      {/* Spine stitches */}
-      <rect x="21" y="9.5" width="1.5" height="2.75" rx="0.75" fill="var(--surface)" />
-      <rect x="21" y="14.625" width="1.5" height="2.75" rx="0.75" fill="var(--surface)" />
-      <rect x="21" y="19.75" width="1.5" height="2.75" rx="0.75" fill="var(--surface)" />
-
-      {/* Right-aligned lines inside sheet */}
-      <circle cx="17" cy="12.25" r="1.1" fill="var(--label-sand)" />
-      <rect x="11.5" y="11.35" width="4.2" height="1.8" rx="0.9" fill="var(--accent)" />
-      <rect x="10.25" y="15.5" width="7.75" height="1.6" rx="0.8" fill="var(--ink)" fillOpacity="0.38" />
-      <rect x="12.25" y="19" width="5.75" height="1.6" rx="0.8" fill="var(--ink)" fillOpacity="0.26" />
-    </svg>
+    />
   );
 }
