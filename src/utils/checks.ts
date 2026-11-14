@@ -7,11 +7,15 @@
  * No framework on purpose — this is the smallest thing that fails if either breaks.
  */
 import assert from 'node:assert/strict';
+import { EditorState, type Transaction } from '@codemirror/state';
+import { history, historyField, redo as cmRedo, undo as cmUndo } from '@codemirror/commands';
 import { migrateColor, migrateDir, migrateNotes, toWire, NOTE_COLORS } from '../types/note.ts';
 import type { Note } from '../types/note.ts';
 import { detectDirection } from './direction.ts';
+import { classifyProse, getMarkdownLineDirections, analyzeMarkdown } from './markdownDirection.ts';
 import { cacheKey, evict, type AiCacheEntry } from './aiCache.ts';
 import { evictCmHistories } from './cmHistory.ts';
+import { applyEditorChanges, createBodyEditorState, minimalChange, sourceOffset, editorOffset } from './editorState.ts';
 import { buildMessages } from './ai.ts';
 import {
   emptyHistory, record, undo, redo, evictHistories, COALESCE_MS, MAX_ENTRIES,
@@ -126,12 +130,72 @@ assert.ok(Date.now() - t0 < 1000, 'renderer took too long on pathological input'
 
 // Things the hand-rolled renderer could not do, which is why it was replaced.
 assert.ok(renderMarkdown('| a | b |\n| - | - |\n| 1 | 2 |').includes('<table>'), 'tables');
-assert.ok(renderMarkdown('> quoted').includes('<blockquote>'), 'blockquotes');
-assert.ok(renderMarkdown('1. one\n2. two').includes('<ol>'), 'ordered lists');
-assert.ok(renderMarkdown('- [ ] todo').includes('<li>'), 'nested list markers');
+assert.ok(renderMarkdown('> quoted').includes('<blockquote dir='), 'blockquotes');
+assert.ok(renderMarkdown('1. one\n2. two').includes('<ol dir='), 'ordered lists');
+assert.ok(renderMarkdown('- [ ] todo').includes('<li dir='), 'nested list markers');
 assert.ok(renderMarkdown('a\nb').includes('<br>'), 'a single newline is a line break');
 
+const previewDocument = new JSDOM('').window.document;
+const previewFixture = previewDocument.createElement('div');
+previewFixture.innerHTML = renderMarkdown(
+  '**سلام\nEnglish** [link](https://example.com/ع)\n۱۲\n\n'
+  + '- [x] فارسی\n  - English\n- English\n\n'
+  + '> سلام\n> English\n\n'
+  + '| فارسی | English |\n| -: | :- |\n| ۱ | English |\n\n'
+  + '```js\nفارسی\n```',
+);
+assert.deepEqual(Array.from(previewFixture.querySelectorAll('p:first-child > .markdown-line'), line =>
+  [line.getAttribute('dir'), line.textContent]).slice(0, 3),
+  [['rtl', 'سلام'], ['ltr', 'English link'], ['ltr', '۱۲']]);
+assert.equal(previewFixture.querySelector('p .markdown-line:nth-of-type(2) strong')?.textContent, 'English');
+assert.equal(previewFixture.querySelector('p a')?.getAttribute('rel'), 'noopener noreferrer nofollow');
+assert.deepEqual(Array.from(previewFixture.querySelectorAll('li'), node => node.getAttribute('dir')),
+  ['rtl', 'ltr', 'ltr']);
+assert.equal(previewFixture.querySelector('blockquote')?.getAttribute('dir'), 'rtl');
+assert.deepEqual(Array.from(previewFixture.querySelectorAll('th'), node => node.getAttribute('dir')),
+  ['rtl', 'ltr']);
+assert.deepEqual(Array.from(previewFixture.querySelectorAll('th'), node => node.getAttribute('align')),
+  ['right', 'left']);
+assert.equal(previewFixture.querySelector('pre')?.getAttribute('dir'), 'ltr');
+assert.equal(previewFixture.querySelector('pre code')?.textContent, 'فارسی\n');
+previewFixture.innerHTML = renderMarkdown('English\n`کد`\n\n    فارسی', 'rtl');
+assert.equal(previewFixture.querySelector('p')?.getAttribute('dir'), 'rtl');
+assert.equal(previewFixture.querySelector('code')?.getAttribute('dir'), 'ltr');
+assert.equal(previewFixture.querySelector('pre')?.getAttribute('dir'), 'ltr');
+previewFixture.innerHTML = renderMarkdown('`first\nsecond` فارسی\nEnglish');
+assert.deepEqual(Array.from(previewFixture.querySelectorAll('.markdown-line'), line => line.getAttribute('dir')),
+  ['rtl', 'ltr']);
+
 // ── Direction detection ─────────────────────────────────────────────
+assert.equal(classifyProse('API را اجرا کنید'), 'rtl');
+assert.equal(classifyProse('Écrire'), 'ltr');
+assert.equal(classifyProse('۱۲۳،؟‌ 🙂'), null);
+assert.deepEqual(getMarkdownLineDirections('سلام\nEnglish\n', 'auto'), ['rtl', 'ltr', 'ltr']);
+assert.deepEqual(getMarkdownLineDirections('- [x] API را اجرا کنید\n- [x] ۱۲', 'auto'), ['rtl', 'rtl']);
+assert.deepEqual(getMarkdownLineDirections('English\n---\n\n۱۲۳،\n\nسلام\n🙂', 'auto'),
+  ['ltr', 'ltr', 'ltr', 'ltr', 'ltr', 'rtl', 'rtl']);
+assert.deepEqual(getMarkdownLineDirections('[English](https://example.com/فارسی)\nhttps://example.com/فارسی', 'auto'),
+  ['ltr', 'ltr']);
+assert.deepEqual(getMarkdownLineDirections('سلام\n[۱۲](https://example.com/فارسی)\nabc@example.com\n۱۲', 'auto'),
+  ['rtl', 'rtl', 'ltr', 'rtl']);
+assert.deepEqual(getMarkdownLineDirections('سلام\n`فارسی`\n۱۲', 'auto'), ['rtl', 'ltr', 'rtl']);
+assert.deepEqual(getMarkdownLineDirections('سلام\r\n\r\n> - ~~~js\r\n>   فارسی\r\n>   ~~~\r\nEnglish\r\n', 'rtl'),
+  ['rtl', 'rtl', 'ltr', 'ltr', 'ltr', 'rtl', 'rtl']);
+assert.deepEqual(getMarkdownLineDirections('سلام\n\n    فارسی\n\n۱۲\n\n```\nسلام\n', 'auto'),
+  ['rtl', 'rtl', 'ltr', 'rtl', 'rtl', 'rtl', 'ltr', 'ltr', 'ltr']);
+assert.deepEqual(getMarkdownLineDirections('```\nفارسی\n```\nسلام', 'auto'),
+  ['ltr', 'ltr', 'ltr', 'rtl']);
+assert.deepEqual(getMarkdownLineDirections('> - **سلام\n>   English**\n>   `سلام\n>   فارسی` English', 'auto'),
+  ['rtl', 'ltr', 'ltr', 'ltr']);
+assert.deepEqual(getMarkdownLineDirections('[English](\nhttps://example.com/ع\n) سلام', 'auto'),
+  ['ltr', 'ltr', 'rtl']);
+assert.deepEqual(analyzeMarkdown('[English](\nhttps://example.com/ع\n) سلام', 'auto').isolates[2],
+  [{ from: 0, to: 1 }]);
+const bidiRuns = analyzeMarkdown('> - سلام `فارسی\n>   ادامه`؛ https://example.com/ع.', 'auto').isolates;
+assert.deepEqual(bidiRuns.map((ranges, i) => ranges.map(({ from, to }) =>
+  ['> - سلام `فارسی', '>   ادامه`؛ https://example.com/ع.'][i].slice(from, to))),
+  [['`فارسی'], ['ادامه`', 'https://example.com/ع']]);
+
 assert.equal(detectDirection('سلام'), 'rtl');
 assert.equal(detectDirection('hello'), 'ltr');
 assert.equal(detectDirection(''), 'rtl', 'empty text defaults to rtl');
@@ -154,6 +218,67 @@ assert.equal(migrateDir('rtl'), 'rtl');
 assert.equal(migrateDir(undefined), 'auto', 'a pre-v4 note has no dir');
 assert.equal(migrateDir('LTR'), 'auto', 'case-sensitive on purpose');
 assert.equal(migrateDir(null), 'auto');
+
+// Undo/redo must open on the stored revision, even with a redo tail.
+const legacyStack: NoteHistory = {
+  entries: [
+    { value: 'A', start: 0, end: 1 },
+    { value: 'AB', start: 1, end: 2 },
+    { value: 'ABC', start: 2, end: 3 },
+  ],
+  index: 1,
+  updatedAt: 0,
+};
+const historyExt = history();
+const nativeFields = { history: historyField };
+let cmState = createBodyEditorState('AB', historyExt, null, legacyStack);
+const runHistory = (command: typeof cmUndo) =>
+  command({ state: cmState, dispatch: (tr: Transaction) => { cmState = tr.state; } });
+assert.equal(cmState.doc.toString(), 'AB');
+assert.deepEqual([cmState.selection.main.from, cmState.selection.main.to], [1, 2]);
+assert.ok(runHistory(cmUndo));
+assert.equal(cmState.doc.toString(), 'A');
+assert.deepEqual([cmState.selection.main.from, cmState.selection.main.to], [0, 1]);
+assert.ok(runHistory(cmRedo));
+assert.equal(cmState.doc.toString(), 'AB');
+assert.ok(runHistory(cmRedo));
+assert.equal(cmState.doc.toString(), 'ABC');
+const nativeSnapshot = cmState.toJSON(nativeFields) as { doc: string; selection: unknown };
+cmState = createBodyEditorState('ABC', historyExt, nativeSnapshot, null);
+assert.ok(runHistory(cmUndo));
+assert.equal(cmState.doc.toString(), 'AB');
+for (const entry of [
+  { ...legacyStack, index: -1 },
+  { ...legacyStack, index: 1.5 },
+  { ...legacyStack, entries: [{ value: 'A', start: -1, end: 10 }, ...legacyStack.entries.slice(1)] },
+]) {
+  cmState = createBodyEditorState('AB', historyExt, nativeSnapshot, entry);
+  assert.equal(cmState.doc.toString(), 'AB');
+  assert.ok(!runHistory(cmUndo));
+}
+const invalidHistory = { ...nativeSnapshot, history: { done: null, undone: [] } };
+cmState = createBodyEditorState('ABC', historyExt, invalidHistory, null);
+assert.equal(cmState.doc.toString(), 'ABC');
+assert.deepEqual(cmState.selection.toJSON(), nativeSnapshot.selection);
+assert.ok(!runHistory(cmUndo));
+cmState = createBodyEditorState('ABC', historyExt, { ...nativeSnapshot, selection: { ranges: [{ anchor: 17, head: 17 }], main: 0 } }, null);
+assert.equal(cmState.doc.toString(), 'ABC');
+assert.equal(cmState.selection.main.head, 0);
+assert.ok(!runHistory(cmUndo));
+const fresh = EditorState.create({ doc: 'سلام world!' });
+assert.deepEqual(minimalChange(fresh.doc.toString(), 'سلام دنیا!'), { from: 5, to: 10, insert: 'دنیا' });
+assert.equal(sourceOffset('سلام\r\nEnglish', 5), 6);
+assert.equal(editorOffset('سلام\r\nEnglish', 6), 5);
+const crlfDoc = EditorState.create({ doc: 'a\r\nb\nc' });
+assert.equal(applyEditorChanges('a\r\nb\nc', crlfDoc.changes({ from: 2, to: 3, insert: 'ب' }), '\r\n'),
+  'a\r\nب\nc');
+assert.equal(applyEditorChanges('ab', EditorState.create({ doc: 'ab' }).changes({ from: 1, insert: '\n' }), '\r\n'),
+  'a\r\nb');
+const crlfSnapshot = EditorState.create({ doc: 'سلام\r\nEnglish', extensions: historyExt })
+  .update({ changes: { from: 5, to: 12, insert: 'فارسی' } }).state.toJSON(nativeFields) as { doc: string };
+cmState = createBodyEditorState('سلام\r\nفارسی', historyExt, crlfSnapshot, null);
+assert.ok(runHistory(cmUndo));
+assert.equal(cmState.doc.toString(), 'سلام\nEnglish');
 
 // ── Device labels (v4 Phase 5) ──────────────────────────────────────
 // Ordering is the whole risk here: every Chromium browser also claims Chrome and
