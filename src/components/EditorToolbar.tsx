@@ -28,8 +28,7 @@ interface EditorToolbarProps {
   /**
    * The explicit door to the editor context menu, opened at the button's own rect.
    * Absent means "do not offer it": on a fine pointer with nothing selected, right-click
-   * already covers this and a permanent extra button would be noise. Editor.tsx owns
-   * that decision — see the comment on `openMenu` for why touch cannot use right-click.
+   * already opens the menu. Touch uses this button to keep native selection handles.
    */
   onSelectionMenu?: (x: number, y: number) => void;
   searchOpen?: boolean;
@@ -115,6 +114,7 @@ export function EditorToolbar({
           <IconButton
             label={NOTE_DIR_LABEL[note.dir]}
             active={note.dir !== 'auto'}
+            onMouseDown={event => event.preventDefault()}
             onClick={() => onSetDir(NOTE_DIRS[(NOTE_DIRS.indexOf(note.dir) + 1) % NOTE_DIRS.length])}
           >
             <DirIcon size={16} />
