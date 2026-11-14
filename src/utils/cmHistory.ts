@@ -12,6 +12,8 @@ const MAX_BYTES = 256 * 1024;
 /** `EditorState.toJSON({ history: historyField })` output — opaque here on purpose. */
 export interface CmSnapshot {
   doc: string;
+  /** Original source when its line endings differ from the editor document. */
+  source?: string;
   [field: string]: unknown;
 }
 
@@ -30,7 +32,8 @@ type Store = Record<string, Entry>;
 let store: Store | null = null;
 
 function load(): Store {
-  store ??= getItem<Store>(STORAGE_KEY, {});
+  const saved = store ?? getItem<Store | null>(STORAGE_KEY, {});
+  store = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
   return store;
 }
 
@@ -41,7 +44,7 @@ function load(): Store {
  */
 export function evictCmHistories(s: Store): Store {
   const out = { ...s };
-  let ids = Object.keys(out).sort((a, b) => out[a].updatedAt - out[b].updatedAt);
+  let ids = Object.keys(out).sort((a, b) => (out[a]?.updatedAt ?? 0) - (out[b]?.updatedAt ?? 0));
   while (ids.length > 1 && JSON.stringify(out).length > MAX_BYTES) {
     delete out[ids[0]];
     ids = ids.slice(1);

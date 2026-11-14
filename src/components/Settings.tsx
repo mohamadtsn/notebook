@@ -111,13 +111,13 @@ export function Settings(props: SettingsProps) {
             </Field>
 
             <Field
-              label="ادیتور پیشرفته"
-              description="آزمایشی. چند نشانگر با Alt + کلیک. ممکن است در متن فارسی دقیق نباشد."
+              label="ویرایش با چند نشانگر"
+              description="Alt + کلیک برای افزودن نشانگر، Shift + Alt + کشیدن برای انتخاب ستونی."
             >
               <Switch
                 checked={settings.experimentalEditor}
                 onChange={experimentalEditor => onUpdate({ experimentalEditor })}
-                label="ادیتور پیشرفته (آزمایشی)"
+                label="ویرایش با چند نشانگر"
               />
             </Field>
 

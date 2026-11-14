@@ -6,7 +6,6 @@ import { IconButton } from './ui/IconButton';
 import { popIn } from '../lib/motion';
 
 interface ShortcutsHelpProps {
-  /** Drives the "turn it on first" note, not what is listed. See `experimental` below. */
   experimentalEditor: boolean;
   onClose: () => void;
   /** Opened by keyboard → no enter animation. DESIGN.md §5. */
@@ -17,8 +16,6 @@ interface Shortcut {
   label: string;
   /** Rendered in an LTR row, in the order pressed, whatever the page direction. */
   keys: string[];
-  /** Only live with «ادیتور پیشرفته» on. Marked, never hidden — see the note below. */
-  experimental?: boolean;
 }
 
 const GENERAL: Shortcut[] = [
@@ -42,10 +39,10 @@ const EDITOR: Shortcut[] = [
 ];
 
 const ADVANCED: Shortcut[] = [
-  { label: 'افزودن نشانگر با کلیک', keys: ['Alt'], experimental: true },
-  { label: 'افزودن نشانگر با کلیک (جایگزین)', keys: ['Ctrl'], experimental: true },
-  { label: 'انتخاب ستونی با کشیدن', keys: ['Shift', 'Alt'], experimental: true },
-  { label: 'جمع کردن نشانگرها به یکی', keys: ['Esc'], experimental: true },
+  { label: 'افزودن نشانگر با کلیک', keys: ['Alt'] },
+  { label: 'افزودن نشانگر با کلیک (جایگزین)', keys: ['Ctrl'] },
+  { label: 'انتخاب ستونی با کشیدن', keys: ['Shift', 'Alt'] },
+  { label: 'جمع کردن نشانگرها به یکی', keys: ['Esc'] },
 ];
 
 function Keys({ keys }: { keys: string[] }) {
@@ -82,13 +79,6 @@ function Group({ title, items, note }: { title: string; items: Shortcut[]; note?
   );
 }
 
-/**
- * The advanced editor's bindings were discoverable only by reading `CodeEditor.tsx`.
- *
- * The advanced rows are listed even when the flag is off, with a line saying so: this
- * panel is also how someone finds out the flag is worth turning on. Hiding them would
- * make the feature invisible to exactly the person looking for it.
- */
 export function ShortcutsHelp({ experimentalEditor, onClose, instant }: ShortcutsHelpProps) {
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -133,12 +123,12 @@ export function ShortcutsHelp({ experimentalEditor, onClose, instant }: Shortcut
           <Group title="عمومی" items={GENERAL} />
           <Group title="ویرایشگر" items={EDITOR} />
           <Group
-            title="ادیتور پیشرفته"
+            title="ویرایش با چند نشانگر"
             items={ADVANCED}
             note={
               !experimentalEditor ? (
                 <p className="mb-1 text-xs leading-relaxed text-muted">
-                  این‌ها فقط با روشن بودن «ادیتور پیشرفته» کار می‌کنند — در تنظیمات.
+                  برای این میان‌برها، «ویرایش با چند نشانگر» را در تنظیمات روشن کنید.
                 </p>
               ) : undefined
             }
