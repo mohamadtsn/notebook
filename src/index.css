@@ -222,6 +222,9 @@ button:not(:disabled) { cursor: pointer; }
    The preview is built by dangerouslySetInnerHTML, so its tags can't carry
    utility classes — descendant selectors are the only option here. The
    declarations themselves still come from Tailwind. */
+.cm-editor .cm-line { text-align: start; }
+.cm-bidi-isolate { unicode-bidi: isolate; }
+
 .markdown-preview     { @apply leading-[1.75] text-ink; }
 .markdown-preview h1  { @apply mt-4 mb-2 text-2xl font-semibold tracking-[-.02em]; }
 .markdown-preview h2  { @apply mt-3 mb-1.5 text-xl font-semibold tracking-[-.01em]; }
@@ -257,3 +260,17 @@ button:not(:disabled) { cursor: pointer; }
 .markdown-preview h4,
 .markdown-preview h5,
 .markdown-preview h6 { @apply mt-2 mb-1 font-semibold; }
+
+.markdown-preview :where([dir]) { text-align: start; }
+.markdown-preview .markdown-line {
+  display: inline-block;
+  width: 100%;
+  vertical-align: top;
+  unicode-bidi: isolate;
+}
+.markdown-preview :where(a, code)[dir] { unicode-bidi: isolate; }
+.markdown-preview :is(td, th)[align="left"] { text-align: left; }
+.markdown-preview :is(td, th)[align="center"] { text-align: center; }
+.markdown-preview :is(td, th)[align="right"] { text-align: right; }
+.markdown-preview .markdown-mixed-list { padding-inline: 0; }
+.markdown-preview .markdown-mixed-list > li { margin-inline-start: 1.5rem; }

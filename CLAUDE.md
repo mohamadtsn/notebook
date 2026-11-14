@@ -58,10 +58,9 @@ edit here.
 (This replaced a hand-rolled line-based renderer. Do not reintroduce one — the escape-first ordering
 it depended on was a standing footgun, and it could not render tables, blockquotes or nested lists.)
 
-**Editor undo**: the body `<textarea>` is `hidden` in preview mode, never unmounted — the browser's
-undo stack belongs to the element, so unmounting it threw away every `Ctrl+Z`. For the same reason,
-programmatic edits (the context menu's cut/paste) go through `document.execCommand('insertText')`
-rather than `setBody`: assigning `value` wipes the stack.
+**Editor undo**: the CodeMirror body is hidden in Preview so the current selection and
+undo stack survive the toggle. Context-menu edits, AI replacement, and find/replace
+use individual history transactions.
 
 ## Sync (optional, client side)
 
@@ -107,59 +106,26 @@ does not record which transport produced a result.
 - Sign-out **clears the cache but keeps every local note**. Cache is derived data; notes are a
   product promise.
 
-## Editor history
+## Body editor
 
-`src/utils/history.ts` + `src/hooks/useHistory.ts` own undo/redo, and the native `Ctrl+Z` is
-intercepted in `Editor.tsx` so the two stacks cannot diverge. The store is module-scope and
-persisted under `notebook_history`, because the editor remounts on every note switch (`key={id}`
-in `App`) — history in component state would die there. Steps coalesce inside 700ms, cap at 100 per
-note, and whole notes are evicted (never truncated) at 512KB.
+CodeMirror 6 is the body editor in Write and Trash. Its lazy-loaded chunk is precached
+with the application shell so the first note can be opened offline. The stored
+`settings.experimentalEditor` controls multi-cursor and column selection. Alt+click
+or Ctrl/Cmd+click adds a caret and Shift+Alt+drag selects a column.
 
-## Advanced editor (experimental, off by default)
+Auto mode derives direction per Markdown source line using `utils/markdownDirection.ts`.
+Fenced and indented code are LTR in every mode. The title has its own direction and
+Preview preserves the direction across rendered line breaks. Raw Markdown is used
+for persistence, sync, search coordinates, and export.
 
-`settings.experimentalEditor` swaps the body `<textarea>` for CodeMirror 6
-(`src/components/CodeEditor.tsx`), because a textarea cannot place a second caret at all. The
-component takes the same props the textarea path uses, so `Editor.tsx` branches in one place
-rather than forking.
+`utils/cmHistory.ts` persists CodeMirror's history under `notebook_cm_history`, evicting
+whole snapshots at 256KB. The editor restores a valid snapshot when its document
+matches the note body. Otherwise it can import a matching revision and its undo/redo
+stack from `notebook_history`. Permanent deletion clears both stores for the note.
 
-- **It is `lazy()`-imported, and the service worker must keep it that way.** `vite.config.ts`
-  `globIgnores` the `CodeEditor-*.js` chunk out of the precache and caches it at runtime instead —
-  precaching would hand all 275KB to every user through the back door, which is the exact thing the
-  dynamic import exists to prevent. After touching the chunking, check `npm run build`: the main
-  bundle and the precache total must not grow.
-- **Undo in this mode is CodeMirror's, not `utils/history.ts`.** A `{value, start, end}` entry
-  cannot represent a multi-range edit, so running both stacks would let them diverge. It is
-  persisted anyway, in `utils/cmHistory.ts` (`notebook_cm_history`): CodeMirror serialises its own
-  stack through `historyField`, so what is stored is the editor's real history rather than a
-  re-derivation of it. The store is module-scope for the same reason `useHistory`'s is — the editor
-  remounts on every note switch. A snapshot is **only restored when `snapshot.doc` still equals the
-  note body**; a sync or another tab can move the text underneath it, and replaying a stack against
-  a document it was not recorded against undoes into text the user never wrote. Whole notes are
-  evicted at 256KB, never truncated: `EditorState.fromJSON` on half a history is worse than no
-  history.
-- **Alt+click adds a caret** (`clickAddsSelectionRange`), which is VS Code's binding and what the
-  settings row promises; CodeMirror's own Ctrl/Cmd+click still works. Column select therefore moves
-  to **Shift+Alt+drag**, because plain Alt+drag is the drag half of Alt+click.
-- **Colours come from tokens, and two of the overrides are load-bearing.** The caret is set with
-  the *physical* `borderLeftColor` — CodeMirror hard-codes the caret as a `border-left` on both
-  sides of a bidi boundary, so a `border-inline-start` override lands on the wrong edge in RTL and
-  the caret stays base-theme black. The focused selection has to be written out as
-  `&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground`, matching the base
-  theme's own specificity, or the stock grey wins. `&light` / `&dark` are `baseTheme`-only syntax
-  and throw "Unsupported selector" inside `EditorView.theme`.
-- The view is **hidden, never unmounted**, in preview, for the same reason as the textarea, and
-  gets a `requestMeasure()` on the way back — measurements taken under `display: none` are stale.
-- `Escape` now means two things, so `useKeyboardShortcuts` bails on `e.defaultPrevented`: CodeMirror
-  collapses a multi-cursor selection and marks the event handled, and without that check the note
-  would also close. The same handler treats any `isContentEditable` element as a writing surface —
-  the advanced editor is not an `<input>`, so it used to fall through to "deselect the note".
-
-**RTL was measured, not assumed** (the phase's deletion criterion). Sweeping click positions across
-`سلام hello دنیا world پایان` and comparing caret offsets against the plain textarea: identical at
-16 of 17 positions and for `Home`/`End`; the one difference is the caret affinity exactly at a
-Persian↔English run boundary, where offsets 5 and 10 are the same visual point and both are valid.
-Drag-selection matches on two of three gestures, differing only at that same boundary. Parity, so
-the phase ships.
+The sheet owns scrolling and focus styling. CodeMirror needs `requestMeasure()` after
+Preview hides it. Its caret uses the physical `borderLeftColor` because the base theme
+draws a physical `border-left` in both directions.
 
 ## Backend (`server/`)
 

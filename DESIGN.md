@@ -287,7 +287,7 @@ browser menu.
 
 **In-note search bar (`EditorSearchBar`)** — `glass-panel` (`--r-lg`) anchored at the top-inline-start of the editor sheet (opposite the toolbar pill at top-inline-end so the two never overlap on desktop, stacking cleanly below the toolbar on narrow viewports). Opened by `Ctrl+F` (instant, 0ms animation — §5) or the toolbar search button (`popIn`, `springUI`). Contains a search input (`dir` from `useTextDirection`), a live match counter in Persian numerals (`۲ از ۷` or `بدون نتیجه`, `aria-live="polite"`), previous/next buttons (`Enter` / `Shift+Enter`), toggles for exact match (`Aa`) and whole word, and an expandable replace row in `write` mode («جایگزینی» / «همه», routed through the editor's undoable `applyBody` path). `Esc` closes the bar and restores focus and selection to the active match in the editor.
 
-**Match highlight** — inactive matches use `--accent-soft` background with `--ink` text; the active/focused match in the editor uses `--selection` background with a `1px solid var(--accent)` outline (`rounded-[2px]`). In the plain `<textarea>`, highlights render in a synchronized `aria-hidden` backdrop mirror layer sharing the textarea's grid cell and typography; in CodeMirror, via `Decoration.mark`; in Markdown preview, via a post-sanitize DOM text-node pass.
+**Match highlight** — inactive matches use `--accent-soft` background with `--ink` text; the active/focused match in the editor uses `--selection` background with a `1px solid var(--accent)` outline (`rounded-[2px]`). Title highlights use an `aria-hidden` backdrop. Body highlights use CodeMirror mark decorations, and Markdown Preview highlights use a post-sanitize DOM text-node pass.
 
 **Settings overlay** — glass `overlay` (§2) over the mandatory scrim, centered, `--r-xl`,
 `max-width: 34rem`, `max-height: min(80vh, 44rem)` with the section list as the single scroll
@@ -316,12 +316,11 @@ it while leaving the shape and the focus ring foreign. A 44×26 `--r-full` track
 not a translate, so it travels toward the inline-end in both directions without an RTL special case
 (§7). `role="switch"` with `aria-checked`; the hit area is the whole 44px row height (§8).
 
-**Advanced editor (experimental)** — when `settings.experimentalEditor` is on, the body field is
-CodeMirror rather than a `<textarea>`. It inherits the editor sheet's focus tier: focusing it lights
-the sheet's border and the surface itself draws **no** ring of its own (§8), the way the textarea
-already behaves. It carries no chrome — no gutter, no line numbers, no separate scroll container
-(§2) — because it is a page of writing, not a code pane. Secondary carets use the same `--ink` as
-the primary one; the selection fill is `--accent-soft`, matching every other "selected" surface here.
+**Body editor** — CodeMirror uses the sheet’s focus border and scroll container (§2, §8).
+The body has no gutter or line numbers. Auto direction aligns each source line at its
+reading start, and fenced or indented code stays LTR. Preview preserves that direction
+across single Markdown line breaks. The multi-cursor setting enables secondary carets
+and column selection.
 
 **Toast** — bottom-center (bottom-inline-start on desktop), glass `panel`, enters/exits from the bottom, swipe-to-dismiss with velocity threshold. Destructive actions use an **undo toast**, not a confirm dialog.
 

@@ -1,17 +1,95 @@
-import { useEffect, useImperativeHandle, useRef, type RefObject } from 'react';
-import { EditorState, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, type RefObject } from 'react';
+import { Annotation, Compartment, EditorState, Facet, Prec, RangeSetBuilder, StateEffect, StateField, Transaction, type Range } from '@codemirror/state';
 import {
-  Decoration, Direction, type DecorationSet, EditorView, keymap, drawSelection, rectangularSelection, placeholder,
+  Decoration, Direction, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate,
+  keymap, drawSelection, rectangularSelection, placeholder,
 } from '@codemirror/view';
-import { defaultKeymap, history, historyField, historyKeymap } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, isolateHistory, redo, undo } from '@codemirror/commands';
 import { isCoarsePointer } from '../utils/device';
-import { loadCmHistory, saveCmHistory, type CmSnapshot } from '../utils/cmHistory';
-import type { MatchRange } from '../utils/search';
+import { dropCmHistory, loadCmHistory, saveCmHistory, type CmSnapshot } from '../utils/cmHistory';
+import { dropHistory, loadLegacyHistory } from '../hooks/useHistory';
+import { isShortcutKey, type MatchRange } from '../utils/search';
+import type { NoteDir } from '../types/note';
+import { analyzeMarkdown } from '../utils/markdownDirection';
+import {
+  applyEditorChanges, createBodyEditorState, editorOffset, minimalChange, persistedEditorFields,
+  sourceLineSeparator, sourceOffset,
+} from '../utils/editorState';
 
-/** The serialised fields, named once so save and restore cannot drift apart. */
-const PERSISTED_FIELDS = { history: historyField };
 /** Writes are batched: serialising the whole undo stack per keystroke is pure waste. */
 const FLUSH_MS = 1000;
+
+const direction = new Compartment();
+const multipleSelections = new Compartment();
+const readOnly = new Compartment();
+const historyConfig = new Compartment();
+const externalValue = Annotation.define<string>();
+const replacementValue = Annotation.define<string>();
+const multiCursorExtensions = [
+  EditorState.allowMultipleSelections.of(true),
+  EditorView.clickAddsSelectionRange.of(e => e.altKey || e.ctrlKey || e.metaKey),
+  rectangularSelection({ eventFilter: e => e.altKey && e.shiftKey }),
+];
+const editingMode = (disabled: boolean) => [
+  EditorState.readOnly.of(disabled),
+  EditorView.editable.of(!disabled),
+];
+const directionMode = Facet.define<NoteDir, NoteDir>({ combine: values => values[0] ?? 'auto' });
+const directionLines = {
+  rtl: Decoration.line({ attributes: { dir: 'rtl' } }),
+  ltr: Decoration.line({ attributes: { dir: 'ltr' } }),
+};
+const ltrIsolate = Decoration.mark({
+  class: 'cm-bidi-isolate',
+  attributes: { dir: 'ltr' },
+  bidiIsolate: Direction.LTR,
+});
+
+const lineDirections = ViewPlugin.fromClass(class {
+  private analysis: ReturnType<typeof analyzeMarkdown>;
+  decorations: DecorationSet;
+  isolates: DecorationSet;
+
+  constructor(view: EditorView) {
+    this.analysis = analyzeMarkdown(view.state.doc.toString(), view.state.facet(directionMode));
+    [this.decorations, this.isolates] = this.visibleDecorations(view);
+  }
+
+  update(update: ViewUpdate) {
+    const mode = update.state.facet(directionMode);
+    const changed = update.docChanged || mode !== update.startState.facet(directionMode);
+    if (changed) this.analysis = analyzeMarkdown(update.state.doc.toString(), mode);
+    if (changed || update.viewportChanged) {
+      [this.decorations, this.isolates] = this.visibleDecorations(update.view);
+    }
+  }
+
+  private visibleDecorations(view: EditorView): [DecorationSet, DecorationSet] {
+    const lines: Range<Decoration>[] = [];
+    const marks: Range<Decoration>[] = [];
+    const { doc } = view.state;
+    let decoratedThrough = 0;
+    for (const { from, to } of view.visibleRanges) {
+      let line = doc.lineAt(from);
+      while (line.from <= to) {
+        if (line.number > decoratedThrough) {
+          const index = line.number - 1;
+          lines.push(directionLines[this.analysis.directions[index]].range(line.from));
+          for (const { from: start, to: end } of this.analysis.isolates[index]) {
+            if (end > start) marks.push(ltrIsolate.range(line.from + start, line.from + end));
+          }
+          decoratedThrough = line.number;
+        }
+        if (line.number === doc.lines) break;
+        line = doc.line(line.number + 1);
+      }
+    }
+    return [Decoration.set([...lines, ...marks], true), Decoration.set(marks)];
+  }
+}, {
+  decorations: plugin => plugin.decorations,
+  provide: plugin => EditorView.bidiIsolatedRanges.of(view => view.plugin(plugin)?.isolates ?? Decoration.none),
+});
 
 const setSearchEffect = StateEffect.define<{ matches: MatchRange[]; activeIndex: number }>();
 const searchMark = Decoration.mark({ class: 'cm-searchMatch' });
@@ -45,11 +123,11 @@ const searchHighlightField = StateField.define<DecorationSet>({
 export interface CodeEditorHandle {
   /** Focus and put a single caret at the end — the click-to-write contract. */
   focusEnd(): void;
+  focus(): void;
   /** What the context menu operates on, read at the moment the menu opens. */
   selection(): { value: string; from: number; to: number };
   select(from: number, to: number): void;
-  /** Highlights all in-note search matches and scrolls the active match into view. */
-  setSearchHighlights(matches: MatchRange[], activeIndex: number): void;
+  replaceValue(value: string, from: number, to: number, focus: boolean): void;
 }
 
 interface CodeEditorProps {
@@ -57,37 +135,36 @@ interface CodeEditorProps {
   noteId: string;
   value: string;
   onChange: (v: string) => void;
-  dir: 'rtl' | 'ltr';
+  dir: NoteDir;
+  multiCursor: boolean;
   disabled: boolean;
   /** Kept mounted while the preview is up — see the comment on the effect below. */
   hidden: boolean;
+  searchMatches: MatchRange[];
+  activeSearchIndex: number;
   onRequestMenu: (x: number, y: number, keyboard: boolean) => void;
+  onSelectionChange: (hasSelection: boolean) => void;
   ref?: RefObject<CodeEditorHandle | null>;
 }
 
-/**
- * The body field when `settings.experimentalEditor` is on. A `<textarea>` cannot place a
- * second caret at all, which is the entire reason this component exists.
- *
- * **Undo here is CodeMirror's, not ours.** `utils/history.ts` stores one `{value, start, end}`
- * per step and cannot represent a multi-range edit, so running both stacks would let them
- * diverge — the exact bug the interception in Editor.tsx exists to prevent.
- *
- * It is persisted all the same, in `utils/cmHistory.ts`: the whole editor remounts on a note
- * switch (`key={id}` in App), so an undo stack that lives in the view dies exactly when the
- * user comes back to a note. CodeMirror serialises its own stack through `historyField`, so
- * what is stored is the editor's real history, not a re-derivation of it.
- */
 export function CodeEditor({
-  noteId, value, onChange, dir, disabled, hidden, onRequestMenu, ref,
+  noteId, value, onChange, dir, multiCursor, disabled, hidden, searchMatches, activeSearchIndex,
+  onRequestMenu, onSelectionChange, ref,
 }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const sourceRef = useRef(value);
+  const lineSeparator = useRef(sourceLineSeparator(value) ?? '\n');
   // Read through refs so the view is built once: recreating it per keystroke would
   // throw away the selection and the undo stack.
   const onChangeRef = useRef(onChange);
   const onMenuRef = useRef(onRequestMenu);
-  useEffect(() => { onChangeRef.current = onChange; onMenuRef.current = onRequestMenu; });
+  const onSelectionRef = useRef(onSelectionChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+    onMenuRef.current = onRequestMenu;
+    onSelectionRef.current = onSelectionChange;
+  });
 
   useImperativeHandle(ref, () => ({
     focusEnd() {
@@ -96,27 +173,42 @@ export function CodeEditor({
       view.focus();
       view.dispatch({ selection: { anchor: view.state.doc.length } });
     },
+    focus() {
+      viewRef.current?.focus();
+    },
     selection() {
       const view = viewRef.current;
       if (!view) return { value: '', from: 0, to: 0 };
       const r = view.state.selection.main;
-      return { value: view.state.doc.toString(), from: r.from, to: r.to };
+      const source = sourceRef.current;
+      return { value: source, from: sourceOffset(source, r.from), to: sourceOffset(source, r.to) };
     },
     select(from, to) {
       const view = viewRef.current;
       if (!view) return;
+      const length = view.state.doc.length;
       view.focus();
-      view.dispatch({ selection: { anchor: from, head: to } });
+      view.dispatch({ selection: {
+        anchor: Math.min(editorOffset(sourceRef.current, from), length),
+        head: Math.min(editorOffset(sourceRef.current, to), length),
+      } });
     },
-    setSearchHighlights(matches, activeIndex) {
+    replaceValue(next, from, to, focus) {
       const view = viewRef.current;
-      if (!view) return;
-      view.dispatch({ effects: setSearchEffect.of({ matches, activeIndex }) });
-      if (activeIndex < 0 || !matches[activeIndex]) return;
-      requestAnimationFrame(() => {
-        const activeEl = view.dom.querySelector<HTMLElement>('.cm-searchMatch-selected');
-        activeEl?.scrollIntoView({ block: 'center', inline: 'nearest' });
+      if (!view || view.state.readOnly) return;
+      const previous = view.state.doc.toString();
+      const normalized = view.state.toText(next);
+      const changes = minimalChange(previous, normalized.toString());
+      view.dispatch({
+        changes,
+        selection: {
+          anchor: Math.min(editorOffset(next, from), normalized.length),
+          head: Math.min(editorOffset(next, to), normalized.length),
+        },
+        annotations: [replacementValue.of(next), isolateHistory.of('full'), Transaction.userEvent.of('input')],
+        scrollIntoView: focus,
       });
+      if (focus) view.focus();
     },
   }), []);
 
@@ -128,61 +220,85 @@ export function CodeEditor({
     const flush = () => {
       flushTimer = null;
       const view = viewRef.current;
-      if (view) saveCmHistory(noteId, view.state.toJSON(PERSISTED_FIELDS) as CmSnapshot);
+      if (view) {
+        const snapshot = view.state.toJSON(persistedEditorFields) as CmSnapshot;
+        if (snapshot.doc !== sourceRef.current) snapshot.source = sourceRef.current;
+        if (lineSeparator.current !== '\n') snapshot.lineSeparator = lineSeparator.current;
+        saveCmHistory(noteId, snapshot);
+      }
     };
     const scheduleFlush = () => { flushTimer ??= setTimeout(flush, FLUSH_MS); };
     // The tab can go away mid-edit; a pending flush must not go with it.
     const onHide = () => { if (flushTimer !== null) { clearTimeout(flushTimer); flush(); } };
 
-    /**
-     * Shift passes through to the browser's own menu — Persian spellcheck lives there
-     * (DESIGN.md §6). Same guard as the textarea path, coarse-pointer bail included:
-     * on touch the long press is the platform's selection gesture and this event fires
-     * before the handles settle. The toolbar's selection button is the door there.
-     */
+    const requestMenu = (view: EditorView) => {
+      if (view.state.readOnly) return false;
+      const r = view.dom.getBoundingClientRect();
+      onMenuRef.current(r.left + 24, r.top + 24, true);
+      return true;
+    };
+
+    // Leave the browser's spellcheck menu and touch selection handles available.
     const onContextMenu = (e: MouseEvent) => {
-      if (isCoarsePointer()) return;
-      if (e.shiftKey || disabled) return;
+      if (isCoarsePointer() || e.shiftKey || viewRef.current?.state.readOnly) return;
       e.preventDefault();
       onMenuRef.current(e.clientX, e.clientY, false);
     };
 
     const extensions = [
-      EditorState.allowMultipleSelections.of(true),
-      // Native selection rendering can only draw one range.
+      direction.of(directionMode.of(dir)),
+      EditorView.perLineTextDirection.of(true),
+      lineDirections,
+      multipleSelections.of(multiCursor ? multiCursorExtensions : []),
       drawSelection(),
       searchHighlightField,
-      // Alt+click adds a caret (VS Code's binding, and what the settings row
-      // promises); CodeMirror's own default of Ctrl/Cmd+click is kept alongside.
-      EditorView.clickAddsSelectionRange.of(e => e.altKey || e.ctrlKey || e.metaKey),
-      // Column select moves to Shift+Alt+drag, because plain Alt+drag is now the
-      // drag half of Alt+click and the two cannot share the modifier.
-      rectangularSelection({ eventFilter: e => e.altKey && e.shiftKey }),
-      history(),
+      historyConfig.of(history()),
       keymap.of([
-        // Shift+F10 / the Menu key: a menu reachable only by right-click is not a
-        // keyboard path (DESIGN.md §8).
-        {
-          key: 'Shift-F10',
-          run: v => {
-            const r = v.dom.getBoundingClientRect();
-            onMenuRef.current(r.left + 24, r.top + 24, true);
-            return true;
-          },
-        },
+        { key: 'Shift-F10', run: requestMenu },
+        { key: 'ContextMenu', run: requestMenu },
         ...defaultKeymap,
         ...historyKeymap,
       ]),
+      Prec.high(EditorView.domEventHandlers({
+        keydown(event, view) {
+          if (view.state.readOnly || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey)) return false;
+          if (isShortcutKey(event, 'KeyZ', 'z', 'ظ', 'ك')) {
+            (event.shiftKey ? redo : undo)(view);
+            return true;
+          }
+          if (isShortcutKey(event, 'KeyY', 'y', 'غ', '؛')) {
+            redo(view);
+            return true;
+          }
+          return false;
+        },
+      })),
       EditorView.lineWrapping,
       placeholder('شروع کنید به نوشتن...'),
       // The host div is not the labelled element — the contenteditable is.
       EditorView.contentAttributes.of({ 'aria-label': 'متن یادداشت' }),
-      EditorState.readOnly.of(disabled),
-      EditorView.editable.of(!disabled),
+      readOnly.of(editingMode(disabled)),
       EditorView.updateListener.of(u => {
-        if (!u.docChanged) return;
-        onChangeRef.current(u.state.doc.toString());
-        scheduleFlush();
+        if (u.selectionSet || u.docChanged) {
+          onSelectionRef.current(!u.state.selection.main.empty);
+        }
+        const external = u.transactions.find(tr => tr.annotation(externalValue) !== undefined)?.annotation(externalValue);
+        if (external !== undefined) {
+          sourceRef.current = external;
+          lineSeparator.current = sourceLineSeparator(external) ?? '\n';
+          if (flushTimer !== null) clearTimeout(flushTimer);
+          flushTimer = null;
+          dropCmHistory(noteId);
+          dropHistory(noteId);
+        } else if (!u.state.readOnly && (u.docChanged || u.selectionSet)) {
+          const source = sourceRef.current;
+          for (const tr of u.transactions) {
+            sourceRef.current = tr.annotation(replacementValue)
+              ?? applyEditorChanges(sourceRef.current, tr.changes, lineSeparator.current);
+          }
+          if (source !== sourceRef.current) onChangeRef.current(sourceRef.current);
+          scheduleFlush();
+        }
       }),
       // The document is the one scroll container (Editor.tsx). A height or an
       // overflow here would nest a second scrollbar inside it — DESIGN.md §2.
@@ -221,19 +337,16 @@ export function CodeEditor({
       }),
     ];
 
-    /**
-     * A stored stack is only valid for the document it was recorded against. If the note
-     * changed elsewhere — a sync pulled a newer body, another tab edited it — replaying
-     * that stack would undo its way into text the user never wrote, so it is dropped.
-     */
     const saved = loadCmHistory(noteId);
+    if (saved && (saved.source ?? saved.doc) === value && (saved.lineSeparator === '\r\n' || saved.lineSeparator === '\r')) {
+      lineSeparator.current = saved.lineSeparator;
+    }
     const view = new EditorView({
       parent: host,
-      state: saved && saved.doc === value
-        ? EditorState.fromJSON(saved, { extensions }, PERSISTED_FIELDS)
-        : EditorState.create({ doc: value, extensions }),
+      state: createBodyEditorState(value, extensions, saved, loadLegacyHistory(noteId)),
     });
     viewRef.current = view;
+    onSelectionRef.current(!view.state.selection.main.empty);
 
     // Fix Bidi mouse hit-testing when an RTL line contains or ends with an LTR run
     // (e.g. "… حتی space" with no trailing character). In CodeMirror's `InlineCoordsScan`,
@@ -255,6 +368,8 @@ export function CodeEditor({
       const line = view.state.doc.lineAt(raw.pos);
       if (view.textDirectionAt(line.from) !== Direction.RTL) return raw;
 
+      // The correction mirrors a run only during a drag within that same line.
+      const localAnchor = anchor !== null && anchor >= line.from && anchor <= line.to ? anchor : null;
       const spans = view.bidiSpans(line);
       if (spans.length === 0) return raw;
 
@@ -273,7 +388,7 @@ export function CodeEditor({
               if (coords.x <= leftRect.left + 2) {
                 return { pos: spanEnd, assoc: -1 };
               }
-              if (anchor !== null && anchor < spanStart && coords.x <= rightRect.right) {
+              if (localAnchor !== null && localAnchor < spanStart && coords.x <= rightRect.right) {
                 const mirrored = spanEnd - (raw.pos - spanStart);
                 return { pos: mirrored, assoc: mirrored === spanEnd ? -1 : 1 };
               }
@@ -284,12 +399,12 @@ export function CodeEditor({
 
       // 2. When dragging right-to-left from before any inline LTR span, mirror offsets
       //    inside that LTR span's bounding box so the selection grows monotonically.
-      if (anchor !== null) {
+      if (localAnchor !== null) {
         for (const span of spans) {
           if (span.dir !== Direction.LTR) continue;
           const spanStart = line.from + span.from;
           const spanEnd = line.from + span.to;
-          if (anchor < spanStart && raw.pos >= spanStart && raw.pos <= spanEnd) {
+          if (localAnchor < spanStart && raw.pos >= spanStart && raw.pos <= spanEnd) {
             const leftRect = view.coordsAtPos(spanStart, 1);
             const rightRect = view.coordsAtPos(spanEnd, -1);
             if (leftRect && rightRect) {
@@ -355,22 +470,47 @@ export function CodeEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Outside writes (an AI replacement, a menu action) arrive as a new `value`. Only
-  // dispatch on a real difference: echoing every keystroke back would reset the caret.
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || view.state.doc.toString() === value) return;
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+    if (!view || sourceRef.current === value) return;
+    const changes = minimalChange(view.state.doc.toString(), view.state.toText(value).toString());
+    view.dispatch({ effects: historyConfig.reconfigure([]) });
+    view.dispatch({
+      changes,
+      effects: historyConfig.reconfigure(history()),
+      annotations: [externalValue.of(value), Transaction.addToHistory.of(false)],
+    });
   }, [value]);
 
-  // Hidden rather than unmounted for the same reason as the textarea: the undo stack
-  // belongs to the editor instance, and the preview toggle must not empty it. Coming
-  // back from `display: none` means every cached measurement is stale.
   useEffect(() => {
-    if (!hidden) viewRef.current?.requestMeasure();
-  }, [hidden]);
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: [multipleSelections.reconfigure(multiCursor ? multiCursorExtensions : []), readOnly.reconfigure(editingMode(disabled))],
+      selection: !multiCursor && view.state.selection.ranges.length > 1
+        ? view.state.selection.asSingle()
+        : undefined,
+    });
+  }, [multiCursor, disabled]);
 
-  // `dir` sits on the host so `useTextDirection` stays the single source of truth for
-  // both fields — CodeMirror reads the direction off the computed style.
-  return <div ref={hostRef} dir={dir} hidden={hidden} className="w-full" />;
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || hidden) return;
+    const source = sourceRef.current;
+    const matches = searchMatches.map(({ from, to }) => ({
+      from: editorOffset(source, from),
+      to: editorOffset(source, to),
+    }));
+    const effects: StateEffect<unknown>[] = [setSearchEffect.of({ matches, activeIndex: activeSearchIndex })];
+    const match = matches[activeSearchIndex];
+    if (match) effects.push(EditorView.scrollIntoView(Math.min(match.from, view.state.doc.length), { y: 'center' }));
+    view.dispatch({ effects });
+    view.requestMeasure();
+  }, [searchMatches, activeSearchIndex, hidden]);
+
+  useLayoutEffect(() => {
+    viewRef.current?.dispatch({ effects: direction.reconfigure(directionMode.of(dir)) });
+  }, [dir]);
+
+  return <div ref={hostRef} dir="rtl" className={disabled ? 'w-full opacity-60' : 'w-full'} />;
 }
